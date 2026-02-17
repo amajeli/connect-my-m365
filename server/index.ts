@@ -1,5 +1,6 @@
 import express, { type Request, Response, NextFunction } from "express";
 import session from "express-session";
+import connectPgSimple from "connect-pg-simple";
 import { registerRoutes } from "./routes";
 import { registerMcpRoutes } from "./mcp";
 import { serveStatic } from "./static";
@@ -104,8 +105,14 @@ export function log(message: string, source = "express") {
 
   app.use(express.urlencoded({ extended: false }));
 
+  const PgSession = connectPgSimple(session);
+  app.set('trust proxy', 1);
   app.use(
     session({
+      store: new PgSession({
+        conString: process.env.DATABASE_URL,
+        createTableIfMissing: true,
+      }),
       secret: process.env.SESSION_SECRET || "outlook-connector-session-secret",
       resave: false,
       saveUninitialized: false,
@@ -113,6 +120,7 @@ export function log(message: string, source = "express") {
         secure: process.env.NODE_ENV === "production",
         httpOnly: true,
         maxAge: 7 * 24 * 60 * 60 * 1000,
+        sameSite: "lax",
       },
     })
   );
