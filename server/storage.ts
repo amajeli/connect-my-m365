@@ -1,38 +1,43 @@
-import { type User, type InsertUser } from "@shared/schema";
-import { randomUUID } from "crypto";
-
-// modify the interface with any CRUD methods
-// you might need
+import { type ConnectedAccount, type InsertConnectedAccount, connectedAccounts } from "@shared/schema";
+import { db } from "./db";
+import { eq } from "drizzle-orm";
 
 export interface IStorage {
-  getUser(id: string): Promise<User | undefined>;
-  getUserByUsername(username: string): Promise<User | undefined>;
-  createUser(user: InsertUser): Promise<User>;
+  getAccounts(): Promise<ConnectedAccount[]>;
+  getAccount(id: string): Promise<ConnectedAccount | undefined>;
+  getAccountByEmail(email: string): Promise<ConnectedAccount | undefined>;
+  createAccount(account: InsertConnectedAccount): Promise<ConnectedAccount>;
+  updateAccountTokens(id: string, accessToken: string, refreshToken: string, tokenExpiry: Date): Promise<void>;
+  deleteAccount(id: string): Promise<void>;
 }
 
-export class MemStorage implements IStorage {
-  private users: Map<string, User>;
-
-  constructor() {
-    this.users = new Map();
+export class DatabaseStorage implements IStorage {
+  async getAccounts(): Promise<ConnectedAccount[]> {
+    return await db.select().from(connectedAccounts);
   }
 
-  async getUser(id: string): Promise<User | undefined> {
-    return this.users.get(id);
+  async getAccount(id: string): Promise<ConnectedAccount | undefined> {
+    const [account] = await db.select().from(connectedAccounts).where(eq(connectedAccounts.id, id));
+    return account;
   }
 
-  async getUserByUsername(username: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
-      (user) => user.username === username,
-    );
+  async getAccountByEmail(email: string): Promise<ConnectedAccount | undefined> {
+    const [account] = await db.select().from(connectedAccounts).where(eq(connectedAccounts.email, email));
+    return account;
   }
 
-  async createUser(insertUser: InsertUser): Promise<User> {
-    const id = randomUUID();
-    const user: User = { ...insertUser, id };
-    this.users.set(id, user);
-    return user;
+  async createAccount(account: InsertConnectedAccount): Promise<ConnectedAccount> {
+    const [created] = await db.insert(connectedAccounts).values(account).returning();
+    return created;
+  }
+
+  async updateAccountTokens(id: string, accessToken: string, refreshToken: string, tokenExpiry: Date): Promise<void> {
+    await db.update(connectedAccounts).set({ accessToken, refreshToken, tokenExpiry }).where(eq(connectedAccounts.id, id));
+  }
+
+  async deleteAccount(id: string): Promise<void> {
+    await db.delete(connectedAccounts).where(eq(connectedAccounts.id, id));
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new DatabaseStorage();
