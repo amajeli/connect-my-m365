@@ -43,6 +43,8 @@ export function getAuthUrl(state: string, requestHost?: string): string {
 
 export async function exchangeCodeForTokens(code: string, requestHost?: string) {
   const redirectUri = getRedirectUri(requestHost);
+  console.log("TOKEN EXCHANGE - redirect_uri:", redirectUri); // ADD THIS
+  console.log("TOKEN EXCHANGE - requestHost:", requestHost);  // ADD THIS
   const params = new URLSearchParams({
     client_id: MICROSOFT_CLIENT_ID || "",
     client_secret: MICROSOFT_CLIENT_SECRET || "",
