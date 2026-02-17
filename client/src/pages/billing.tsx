@@ -171,7 +171,7 @@ export default function BillingPage() {
         ) : (
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              Subscribe to activate the MCP connector and connect Claude.ai to your Outlook.
+              Start your free 5-day trial to activate the MCP connector and connect Claude.ai to your Outlook. No charge during the trial period.
             </p>
             <div className="flex gap-3 flex-wrap">
               {monthlyPrice && (

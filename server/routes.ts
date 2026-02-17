@@ -338,6 +338,9 @@ export async function registerRoutes(
         payment_method_types: ['card'],
         line_items: [{ price: priceId, quantity: 1 }],
         mode: 'subscription',
+        subscription_data: {
+          trial_period_days: 5,
+        },
         success_url: `${req.protocol}://${req.get('host')}/billing?success=true`,
         cancel_url: `${req.protocol}://${req.get('host')}/billing?canceled=true`,
       });

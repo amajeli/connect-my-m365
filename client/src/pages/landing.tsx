@@ -126,9 +126,12 @@ export default function LandingPage() {
           <a href="/api/auth/microsoft" data-testid="button-pricing-cta">
             <Button className="w-full gap-2">
               <LogIn className="w-4 h-4" />
-              Start with Microsoft Sign In
+              Start Free 5-Day Trial
             </Button>
           </a>
+          <p className="text-xs text-center text-muted-foreground mt-2">
+            No charge during trial. Cancel anytime.
+          </p>
         </Card>
       </section>
 
