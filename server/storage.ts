@@ -1,4 +1,4 @@
-import { type ConnectedAccount, type InsertConnectedAccount, type User, type InsertUser, connectedAccounts, users } from "@shared/schema";
+import { type ConnectedAccount, type InsertConnectedAccount, type User, type InsertUser, connectedAccounts, users, oauthClients, oauthCodes, oauthTokens } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, sql } from "drizzle-orm";
 
@@ -23,6 +23,16 @@ export interface IStorage {
   listProductsWithPrices(active?: boolean): Promise<any[]>;
   getPrice(priceId: string): Promise<any>;
   getSubscription(subscriptionId: string): Promise<any>;
+
+  createOAuthClient(data: { clientId: string; clientSecret: string; clientName?: string; redirectUris: string[] }): Promise<any>;
+  getOAuthClient(clientId: string): Promise<any | undefined>;
+  createOAuthCode(data: { code: string; clientId: string; userId: string; redirectUri: string; scope?: string; expiresAt: Date; codeChallenge?: string; codeChallengeMethod?: string }): Promise<any>;
+  getOAuthCode(code: string): Promise<any | undefined>;
+  markOAuthCodeUsed(code: string): Promise<void>;
+  createOAuthToken(data: { accessToken: string; refreshToken?: string; clientId: string; userId: string; scope?: string; expiresAt: Date }): Promise<any>;
+  getOAuthTokenByAccessToken(accessToken: string): Promise<any | undefined>;
+  getOAuthTokenByRefreshToken(refreshToken: string): Promise<any | undefined>;
+  deleteOAuthToken(id: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -141,6 +151,49 @@ export class DatabaseStorage implements IStorage {
       sql`SELECT * FROM stripe.subscriptions WHERE id = ${subscriptionId}`
     );
     return result.rows[0] || null;
+  }
+
+  async createOAuthClient(data: { clientId: string; clientSecret: string; clientName?: string; redirectUris: string[] }): Promise<any> {
+    const [created] = await db.insert(oauthClients).values(data).returning();
+    return created;
+  }
+
+  async getOAuthClient(clientId: string): Promise<any | undefined> {
+    const [client] = await db.select().from(oauthClients).where(eq(oauthClients.clientId, clientId));
+    return client;
+  }
+
+  async createOAuthCode(data: { code: string; clientId: string; userId: string; redirectUri: string; scope?: string; expiresAt: Date; codeChallenge?: string; codeChallengeMethod?: string }): Promise<any> {
+    const [created] = await db.insert(oauthCodes).values(data).returning();
+    return created;
+  }
+
+  async getOAuthCode(code: string): Promise<any | undefined> {
+    const [record] = await db.select().from(oauthCodes).where(eq(oauthCodes.code, code));
+    return record;
+  }
+
+  async markOAuthCodeUsed(code: string): Promise<void> {
+    await db.update(oauthCodes).set({ used: true }).where(eq(oauthCodes.code, code));
+  }
+
+  async createOAuthToken(data: { accessToken: string; refreshToken?: string; clientId: string; userId: string; scope?: string; expiresAt: Date }): Promise<any> {
+    const [created] = await db.insert(oauthTokens).values(data).returning();
+    return created;
+  }
+
+  async getOAuthTokenByAccessToken(accessToken: string): Promise<any | undefined> {
+    const [token] = await db.select().from(oauthTokens).where(eq(oauthTokens.accessToken, accessToken));
+    return token;
+  }
+
+  async getOAuthTokenByRefreshToken(refreshToken: string): Promise<any | undefined> {
+    const [token] = await db.select().from(oauthTokens).where(eq(oauthTokens.refreshToken, refreshToken));
+    return token;
+  }
+
+  async deleteOAuthToken(id: string): Promise<void> {
+    await db.delete(oauthTokens).where(eq(oauthTokens.id, id));
   }
 }
 

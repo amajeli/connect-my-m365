@@ -2,6 +2,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import session from "express-session";
 import connectPgSimple from "connect-pg-simple";
 import { registerRoutes } from "./routes";
+import { registerOAuthRoutes } from "./oauth";
 import { registerMcpRoutes } from "./mcp";
 import { serveStatic } from "./static";
 import { createServer } from "http";
@@ -14,6 +15,15 @@ declare module "express-session" {
     oauthState?: string;
     userId?: string;
     connectOnly?: boolean;
+    pendingOAuth?: {
+      client_id?: string;
+      redirect_uri?: string;
+      response_type?: string;
+      state?: string;
+      scope?: string;
+      code_challenge?: string;
+      code_challenge_method?: string;
+    };
   }
 }
 
@@ -151,6 +161,7 @@ export function log(message: string, source = "express") {
     next();
   });
 
+  registerOAuthRoutes(app);
   registerMcpRoutes(app);
   await registerRoutes(httpServer, app);
 

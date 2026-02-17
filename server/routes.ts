@@ -162,6 +162,20 @@ export async function registerRoutes(
         });
       }
 
+      if (req.session.pendingOAuth) {
+        const pending = req.session.pendingOAuth;
+        delete req.session.pendingOAuth;
+        const params = new URLSearchParams();
+        if (pending.client_id) params.set("client_id", pending.client_id);
+        if (pending.redirect_uri) params.set("redirect_uri", pending.redirect_uri);
+        if (pending.response_type) params.set("response_type", pending.response_type);
+        if (pending.state) params.set("state", pending.state);
+        if (pending.scope) params.set("scope", pending.scope);
+        if (pending.code_challenge) params.set("code_challenge", pending.code_challenge);
+        if (pending.code_challenge_method) params.set("code_challenge_method", pending.code_challenge_method);
+        return res.redirect(`/oauth/authorize?${params.toString()}`);
+      }
+
       res.redirect("/inbox");
     } catch (err: any) {
       console.error("OAuth callback error:", err.message);

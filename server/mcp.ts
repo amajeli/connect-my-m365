@@ -380,28 +380,61 @@ async function validateMcpAuth(req: Request, res: Response): Promise<User | null
   }
 
   const token = authHeader.slice(7);
+
   const user = await storage.getUserByMcpApiKey(token);
-
-  if (!user) {
-    res.status(403).json({
-      jsonrpc: "2.0",
-      error: { code: -32000, message: "Forbidden: Invalid API key" },
-      id: null,
-    });
-    return null;
+  if (user) {
+    const activeStatuses = ["active", "trialing"];
+    if (!activeStatuses.includes(user.subscriptionStatus || "")) {
+      res.status(403).json({
+        jsonrpc: "2.0",
+        error: { code: -32000, message: "Forbidden: Active subscription required to use MCP connector. Visit the Outlook Connector to subscribe." },
+        id: null,
+      });
+      return null;
+    }
+    return user;
   }
 
-  const activeStatuses = ["active", "trialing"];
-  if (!activeStatuses.includes(user.subscriptionStatus || "")) {
-    res.status(403).json({
-      jsonrpc: "2.0",
-      error: { code: -32000, message: "Forbidden: Active subscription required to use MCP connector. Visit the Outlook Connector to subscribe." },
-      id: null,
-    });
-    return null;
+  const oauthToken = await storage.getOAuthTokenByAccessToken(token);
+  if (oauthToken) {
+    if (new Date() > oauthToken.expiresAt) {
+      res.status(401).json({
+        jsonrpc: "2.0",
+        error: { code: -32000, message: "Unauthorized: OAuth access token has expired" },
+        id: null,
+      });
+      return null;
+    }
+
+    const oauthUser = await storage.getUser(oauthToken.userId);
+    if (!oauthUser) {
+      res.status(403).json({
+        jsonrpc: "2.0",
+        error: { code: -32000, message: "Forbidden: User not found" },
+        id: null,
+      });
+      return null;
+    }
+
+    const activeStatuses = ["active", "trialing"];
+    if (!activeStatuses.includes(oauthUser.subscriptionStatus || "")) {
+      res.status(403).json({
+        jsonrpc: "2.0",
+        error: { code: -32000, message: "Forbidden: Active subscription required to use MCP connector. Visit the Outlook Connector to subscribe." },
+        id: null,
+      });
+      return null;
+    }
+
+    return oauthUser;
   }
 
-  return user;
+  res.status(403).json({
+    jsonrpc: "2.0",
+    error: { code: -32000, message: "Forbidden: Invalid API key or OAuth token" },
+    id: null,
+  });
+  return null;
 }
 
 export function registerMcpRoutes(app: Express): void {
