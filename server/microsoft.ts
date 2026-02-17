@@ -16,17 +16,18 @@ const SCOPES = [
   "User.Read",
 ];
 
-function getRedirectUri(): string {
-  const host = process.env.REPLIT_DEPLOYMENT_URL || process.env.REPLIT_DEV_DOMAIN;
+function getRedirectUri(requestHost?: string): string {
+  const host = requestHost || process.env.REPLIT_DEPLOYMENT_URL || process.env.REPLIT_DEV_DOMAIN;
   if (host) {
-    const protocol = host.includes("localhost") ? "http" : "https";
-    return `${protocol}://${host}/api/auth/callback`;
+    const cleanHost = host.replace(/^https?:\/\//, '');
+    const protocol = cleanHost.includes("localhost") ? "http" : "https";
+    return `${protocol}://${cleanHost}/api/auth/callback`;
   }
   return `http://localhost:5000/api/auth/callback`;
 }
 
-export function getAuthUrl(state: string): string {
-  const redirectUri = getRedirectUri();
+export function getAuthUrl(state: string, requestHost?: string): string {
+  const redirectUri = getRedirectUri(requestHost);
   const params = new URLSearchParams({
     client_id: MICROSOFT_CLIENT_ID || "",
     redirect_uri: redirectUri,
@@ -40,8 +41,8 @@ export function getAuthUrl(state: string): string {
   return `https://login.microsoftonline.com/common/oauth2/v2.0/authorize?${params}`;
 }
 
-export async function exchangeCodeForTokens(code: string) {
-  const redirectUri = getRedirectUri();
+export async function exchangeCodeForTokens(code: string, requestHost?: string) {
+  const redirectUri = getRedirectUri(requestHost);
   const params = new URLSearchParams({
     client_id: MICROSOFT_CLIENT_ID || "",
     client_secret: MICROSOFT_CLIENT_SECRET || "",

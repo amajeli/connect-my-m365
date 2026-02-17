@@ -59,7 +59,8 @@ export async function registerRoutes(
       }
       req.session.connectOnly = true;
     }
-    const authUrl = getAuthUrl(state);
+    const requestHost = req.get('host');
+    const authUrl = getAuthUrl(state, requestHost);
     res.redirect(authUrl);
   });
 
@@ -85,7 +86,8 @@ export async function registerRoutes(
     }
 
     try {
-      const tokens = await exchangeCodeForTokens(code);
+      const requestHost = req.get('host');
+      const tokens = await exchangeCodeForTokens(code, requestHost);
       const profile = await getUserProfile(tokens.access_token);
 
       const email = profile.mail || profile.userPrincipalName || "";
