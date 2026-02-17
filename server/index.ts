@@ -148,7 +148,7 @@ export function log(message: string, source = "express") {
 
     res.on("finish", () => {
       const duration = Date.now() - start;
-      if (path.startsWith("/api")) {
+      if (path.startsWith("/api") || path.startsWith("/oauth") || path.startsWith("/mcp") || path.startsWith("/.well-known")) {
         let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
         if (capturedJsonResponse) {
           logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;

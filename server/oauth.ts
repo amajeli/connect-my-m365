@@ -9,6 +9,16 @@ function getBaseUrl(req: Request): string {
 }
 
 export function registerOAuthRoutes(app: Express): void {
+  app.get("/.well-known/oauth-protected-resource", (req: Request, res: Response) => {
+    const baseUrl = getBaseUrl(req);
+    res.json({
+      resource: `${baseUrl}/mcp`,
+      authorization_servers: [baseUrl],
+      scopes_supported: ["outlook:read"],
+      bearer_methods_supported: ["header"],
+    });
+  });
+
   app.get("/.well-known/oauth-authorization-server", (req: Request, res: Response) => {
     const baseUrl = getBaseUrl(req);
     res.json({

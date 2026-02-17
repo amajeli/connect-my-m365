@@ -12,6 +12,14 @@ import {
 } from "./microsoft";
 import type { User, OutlookEmail, OutlookCalendarEvent } from "@shared/schema";
 
+function checkSubscription(user: User): string | null {
+  const activeStatuses = ["active", "trialing"];
+  if (!activeStatuses.includes(user.subscriptionStatus || "")) {
+    return "Active subscription required to use Outlook Connector tools. Please visit the Outlook Connector web app to subscribe first.";
+  }
+  return null;
+}
+
 function createMcpServer(user: User): McpServer {
   const server = new McpServer({
     name: "outlook-connector",
@@ -23,6 +31,10 @@ function createMcpServer(user: User): McpServer {
     "List all connected Microsoft Outlook accounts. Returns account email, display name, and type (work or personal).",
     {},
     async () => {
+      const subError = checkSubscription(user);
+      if (subError) {
+        return { content: [{ type: "text" as const, text: subError }] };
+      }
       const accounts = await storage.getAccountsByUserId(user.id);
       if (accounts.length === 0) {
         return {
@@ -71,6 +83,10 @@ function createMcpServer(user: User): McpServer {
         .describe("Maximum number of emails to return (default: 20, max: 50)"),
     },
     async ({ account_email, limit }) => {
+      const subError = checkSubscription(user);
+      if (subError) {
+        return { content: [{ type: "text" as const, text: subError }] };
+      }
       const accounts = await storage.getAccountsByUserId(user.id);
       if (accounts.length === 0) {
         return {
@@ -138,6 +154,10 @@ function createMcpServer(user: User): McpServer {
       limit: z.number().min(1).max(50).default(20).describe("Maximum number of results to return (default: 20, max: 50)"),
     },
     async ({ query, account_email, limit }) => {
+      const subError = checkSubscription(user);
+      if (subError) {
+        return { content: [{ type: "text" as const, text: subError }] };
+      }
       const accounts = await storage.getAccountsByUserId(user.id);
       if (accounts.length === 0) {
         return {
@@ -214,6 +234,10 @@ function createMcpServer(user: User): McpServer {
       account_email: z.string().describe("The email address of the account that contains this email"),
     },
     async ({ email_id, account_email }) => {
+      const subError = checkSubscription(user);
+      if (subError) {
+        return { content: [{ type: "text" as const, text: subError }] };
+      }
       const accounts = await storage.getAccountsByUserId(user.id);
       const account = accounts.find(
         (a) => a.email.toLowerCase() === account_email.toLowerCase()
@@ -278,6 +302,10 @@ function createMcpServer(user: User): McpServer {
       days_behind: z.number().min(0).max(30).default(7).describe("Number of days in the past to include (default: 7, max: 30)"),
     },
     async ({ account_email, days_ahead, days_behind }) => {
+      const subError = checkSubscription(user);
+      if (subError) {
+        return { content: [{ type: "text" as const, text: subError }] };
+      }
       const accounts = await storage.getAccountsByUserId(user.id);
       if (accounts.length === 0) {
         return {
@@ -373,7 +401,7 @@ async function validateMcpAuth(req: Request, res: Response): Promise<User | null
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
     res.status(401).json({
       jsonrpc: "2.0",
-      error: { code: -32000, message: "Unauthorized: Bearer token required. Use your MCP API key from the Outlook Connector billing page." },
+      error: { code: -32000, message: "Unauthorized: Bearer token required" },
       id: null,
     });
     return null;
@@ -383,21 +411,14 @@ async function validateMcpAuth(req: Request, res: Response): Promise<User | null
 
   const user = await storage.getUserByMcpApiKey(token);
   if (user) {
-    const activeStatuses = ["active", "trialing"];
-    if (!activeStatuses.includes(user.subscriptionStatus || "")) {
-      res.status(403).json({
-        jsonrpc: "2.0",
-        error: { code: -32000, message: "Forbidden: Active subscription required to use MCP connector. Visit the Outlook Connector to subscribe." },
-        id: null,
-      });
-      return null;
-    }
+    console.log(`MCP auth: Legacy API key matched user ${user.id} (${user.email}), subscription: ${user.subscriptionStatus}`);
     return user;
   }
 
   const oauthToken = await storage.getOAuthTokenByAccessToken(token);
   if (oauthToken) {
     if (new Date() > oauthToken.expiresAt) {
+      console.log(`MCP auth: OAuth token expired for user ${oauthToken.userId}`);
       res.status(401).json({
         jsonrpc: "2.0",
         error: { code: -32000, message: "Unauthorized: OAuth access token has expired" },
@@ -408,6 +429,7 @@ async function validateMcpAuth(req: Request, res: Response): Promise<User | null
 
     const oauthUser = await storage.getUser(oauthToken.userId);
     if (!oauthUser) {
+      console.log(`MCP auth: User ${oauthToken.userId} not found for OAuth token`);
       res.status(403).json({
         jsonrpc: "2.0",
         error: { code: -32000, message: "Forbidden: User not found" },
@@ -416,22 +438,14 @@ async function validateMcpAuth(req: Request, res: Response): Promise<User | null
       return null;
     }
 
-    const activeStatuses = ["active", "trialing"];
-    if (!activeStatuses.includes(oauthUser.subscriptionStatus || "")) {
-      res.status(403).json({
-        jsonrpc: "2.0",
-        error: { code: -32000, message: "Forbidden: Active subscription required to use MCP connector. Visit the Outlook Connector to subscribe." },
-        id: null,
-      });
-      return null;
-    }
-
+    console.log(`MCP auth: OAuth token matched user ${oauthUser.id} (${oauthUser.email}), subscription: ${oauthUser.subscriptionStatus}`);
     return oauthUser;
   }
 
-  res.status(403).json({
+  console.log(`MCP auth: No matching API key or OAuth token found`);
+  res.status(401).json({
     jsonrpc: "2.0",
-    error: { code: -32000, message: "Forbidden: Invalid API key or OAuth token" },
+    error: { code: -32000, message: "Unauthorized: Invalid API key or OAuth token" },
     id: null,
   });
   return null;
