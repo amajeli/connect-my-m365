@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
 import { Card } from "@/components/ui/card";
@@ -8,22 +8,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-import {
   CreditCard,
   Key,
   Copy,
   Check,
-  RefreshCw,
   ExternalLink,
   Zap,
 } from "lucide-react";
@@ -33,17 +21,10 @@ import { useToast } from "@/hooks/use-toast";
 export default function BillingPage() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const [copiedKey, setCopiedKey] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(false);
-  const [regenerating, setRegenerating] = useState(false);
 
   const { data: productsData } = useQuery<{ data: any[] }>({
     queryKey: ["/api/products-with-prices"],
-  });
-
-  const { data: mcpKeyData } = useQuery<{ mcpApiKey: string }>({
-    queryKey: ["/api/mcp-key"],
-    enabled: !!user,
   });
 
   useEffect(() => {
@@ -91,19 +72,6 @@ export default function BillingPage() {
     }
   };
 
-  const handleCopyKey = async () => {
-    const key = mcpKeyData?.mcpApiKey;
-    if (!key) return;
-    try {
-      await navigator.clipboard.writeText(key);
-      setCopiedKey(true);
-      setTimeout(() => setCopiedKey(false), 2000);
-      toast({ title: "API key copied" });
-    } catch {
-      toast({ title: "Failed to copy", variant: "destructive" });
-    }
-  };
-
   const handleCopyUrl = async () => {
     const url = `${window.location.origin}/mcp`;
     try {
@@ -113,19 +81,6 @@ export default function BillingPage() {
       toast({ title: "MCP URL copied" });
     } catch {
       toast({ title: "Failed to copy", variant: "destructive" });
-    }
-  };
-
-  const handleRegenerateKey = async () => {
-    setRegenerating(true);
-    try {
-      await apiRequest("POST", "/api/mcp-key/regenerate");
-      queryClient.invalidateQueries({ queryKey: ["/api/mcp-key"] });
-      toast({ title: "API key regenerated", description: "Update your Claude.ai connector settings with the new key." });
-    } catch (err: any) {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
-    } finally {
-      setRegenerating(false);
     }
   };
 
@@ -223,57 +178,20 @@ export default function BillingPage() {
             </div>
           </div>
 
-          <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1 block">
-              Your MCP API Key (Bearer Token)
-            </label>
-            <div className="flex gap-2">
-              <Input
-                readOnly
-                value={mcpKeyData?.mcpApiKey || "Loading..."}
-                className="font-mono text-xs"
-                type="password"
-                data-testid="input-mcp-api-key"
-              />
-              <Button size="icon" variant="ghost" onClick={handleCopyKey} data-testid="button-copy-api-key">
-                {copiedKey ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-              </Button>
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button size="icon" variant="ghost" disabled={regenerating} data-testid="button-regenerate-key">
-                    <RefreshCw className={`w-4 h-4 ${regenerating ? "animate-spin" : ""}`} />
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Regenerate API Key?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      Your current key will stop working. You will need to update
-                      the key in your Claude.ai connector settings.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel data-testid="button-cancel-regenerate">Cancel</AlertDialogCancel>
-                    <AlertDialogAction onClick={handleRegenerateKey} data-testid="button-confirm-regenerate">
-                      Regenerate
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            </div>
-          </div>
-
           <Separator />
 
           <div>
             <h3 className="text-sm font-medium mb-2">Setup Instructions</h3>
             <ol className="text-sm text-muted-foreground space-y-2 list-decimal list-inside">
               <li>Go to Claude.ai Settings and find Connectors</li>
-              <li>Click &quot;Add custom connector&quot;</li>
+              <li>Click "Add custom connector"</li>
               <li>Paste the MCP Server URL above</li>
-              <li>In Advanced settings, add your API key as a Bearer token</li>
-              <li>Save and start using Outlook tools in Claude conversations</li>
+              <li>Claude will redirect you to sign in with your Microsoft account</li>
+              <li>After signing in, the connector is ready to use in Claude conversations</li>
             </ol>
+            <p className="text-xs text-muted-foreground mt-3">
+              Authentication is handled automatically via OAuth. No API key or client secret is needed.
+            </p>
           </div>
         </div>
       </Card>

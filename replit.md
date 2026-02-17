@@ -43,23 +43,28 @@ The app exposes an MCP server at `/mcp` that Claude.ai can connect to as a custo
 - `get_calendar_events` - Fetch calendar events with configurable date range
 
 ### MCP Authentication
-- Each user gets a unique MCP API key (UUID) stored in the users table
-- MCP endpoint requires a Bearer token matching a user's mcpApiKey
+- **Primary: OAuth 2.0** - Claude.ai uses Dynamic Client Registration (RFC 7591) and OAuth authorization code flow
+  - Discovery endpoint: `/.well-known/oauth-authorization-server`
+  - Dynamic client registration: `POST /oauth/register`
+  - Authorization: `GET /oauth/authorize` (redirects to Microsoft login if not authenticated)
+  - Token exchange: `POST /oauth/token` (supports authorization_code and refresh_token grants)
+  - PKCE (S256) supported for enhanced security
+- **Fallback: Legacy API keys** - Per-user MCP API keys still work for manual testing
 - User must have an active subscription (status: "active" or "trialing") to use MCP
-- Keys can be regenerated from the Billing page
 
 ### Setting Up in Claude.ai
 1. Subscribe to activate the connector
-2. Go to Billing page, copy MCP Server URL and API Key
-3. In Claude.ai Settings > Connectors, add custom connector
-4. Paste URL and add API key as Bearer token
+2. Go to Billing page, copy the MCP Server URL
+3. In Claude.ai Settings > Connectors, click "Add custom connector"
+4. Paste the MCP Server URL - Claude handles OAuth authentication automatically
 
 ## Project Structure
-- `shared/schema.ts` - Database schema (users + connected_accounts) and TypeScript types
+- `shared/schema.ts` - Database schema (users, connected_accounts, oauth_clients, oauth_codes, oauth_tokens)
 - `server/routes.ts` - API endpoints (auth, accounts, emails, calendar, Stripe checkout/billing)
-- `server/mcp.ts` - MCP server with per-user scoping and API key auth
+- `server/oauth.ts` - OAuth 2.0 provider (discovery, DCR, authorize, token endpoints)
+- `server/mcp.ts` - MCP server with per-user scoping and OAuth/API key auth
 - `server/microsoft.ts` - Microsoft Graph API integration (OAuth, token management, API calls)
-- `server/storage.ts` - Database storage layer + Stripe schema queries
+- `server/storage.ts` - Database storage layer + Stripe schema queries + OAuth storage
 - `server/stripeClient.ts` - Stripe client via Replit connector credentials
 - `server/webhookHandlers.ts` - Stripe webhook processing
 - `server/seed-products.ts` - Script to create Stripe products/prices
@@ -90,6 +95,18 @@ The app exposes an MCP server at `/mcp` that Claude.ai can connect to as a custo
 - userId (varchar, FK → users.id, cascade delete)
 - email, displayName, accountType, accessToken, refreshToken, tokenExpiry, isActive, connectedAt
 
+### oauth_clients table (Dynamic Client Registration)
+- id (varchar, PK, UUID)
+- clientId (text, unique), clientSecret (text), clientName (text), redirectUris (text[]), createdAt
+
+### oauth_codes table (Authorization codes)
+- id (varchar, PK, UUID)
+- code (text, unique), clientId, userId (FK), redirectUri, scope, codeChallenge, codeChallengeMethod, expiresAt, used, createdAt
+
+### oauth_tokens table (Access/refresh tokens)
+- id (varchar, PK, UUID)
+- accessToken (text, unique), refreshToken (text, unique), clientId, userId (FK), scope, expiresAt, createdAt
+
 ## API Routes
 ### Auth
 - `GET /api/auth/me` - Get current user (returns null if not authenticated)
@@ -113,8 +130,14 @@ The app exposes an MCP server at `/mcp` that Claude.ai can connect to as a custo
 - `POST /api/mcp-key/regenerate` - Regenerate MCP API key
 - `POST /api/stripe/webhook` - Stripe webhook handler (raw body, before express.json())
 
+### OAuth (for Claude.ai MCP connector)
+- `GET /.well-known/oauth-authorization-server` - OAuth discovery metadata
+- `POST /oauth/register` - Dynamic Client Registration (RFC 7591)
+- `GET /oauth/authorize` - Authorization endpoint (redirects to Microsoft login if needed)
+- `POST /oauth/token` - Token endpoint (authorization_code + refresh_token grants)
+
 ### MCP
-- `POST /mcp` - MCP Streamable HTTP endpoint (requires Bearer token + active subscription)
+- `POST /mcp` - MCP Streamable HTTP endpoint (requires OAuth Bearer token or legacy API key + active subscription)
 - `GET /mcp` - MCP SSE notifications endpoint
 - `DELETE /mcp` - MCP session termination
 
