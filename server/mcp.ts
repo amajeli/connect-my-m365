@@ -10,9 +10,9 @@ import {
   getEmails,
   getCalendarEvents,
 } from "./microsoft";
-import type { OutlookEmail, OutlookCalendarEvent } from "@shared/schema";
+import type { User, OutlookEmail, OutlookCalendarEvent } from "@shared/schema";
 
-function createMcpServer(): McpServer {
+function createMcpServer(user: User): McpServer {
   const server = new McpServer({
     name: "outlook-connector",
     version: "1.0.0",
@@ -23,7 +23,7 @@ function createMcpServer(): McpServer {
     "List all connected Microsoft Outlook accounts. Returns account email, display name, and type (work or personal).",
     {},
     async () => {
-      const accounts = await storage.getAccounts();
+      const accounts = await storage.getAccountsByUserId(user.id);
       if (accounts.length === 0) {
         return {
           content: [
@@ -71,32 +71,20 @@ function createMcpServer(): McpServer {
         .describe("Maximum number of emails to return (default: 20, max: 50)"),
     },
     async ({ account_email, limit }) => {
-      const accounts = await storage.getAccounts();
+      const accounts = await storage.getAccountsByUserId(user.id);
       if (accounts.length === 0) {
         return {
-          content: [
-            {
-              type: "text" as const,
-              text: "No Microsoft accounts are connected.",
-            },
-          ],
+          content: [{ type: "text" as const, text: "No Microsoft accounts are connected." }],
         };
       }
 
       const targetAccounts = account_email
-        ? accounts.filter(
-            (a) => a.email.toLowerCase() === account_email.toLowerCase()
-          )
+        ? accounts.filter((a) => a.email.toLowerCase() === account_email.toLowerCase())
         : accounts;
 
       if (targetAccounts.length === 0) {
         return {
-          content: [
-            {
-              type: "text" as const,
-              text: `No connected account found with email: ${account_email}`,
-            },
-          ],
+          content: [{ type: "text" as const, text: `No connected account found with email: ${account_email}` }],
         };
       }
 
@@ -113,17 +101,12 @@ function createMcpServer(): McpServer {
           }));
           allEmails.push(...enriched);
         } catch (err: any) {
-          console.error(
-            `MCP: Failed to fetch emails for ${account.email}:`,
-            err.message
-          );
+          console.error(`MCP: Failed to fetch emails for ${account.email}:`, err.message);
         }
       }
 
       allEmails.sort(
-        (a, b) =>
-          new Date(b.receivedDateTime).getTime() -
-          new Date(a.receivedDateTime).getTime()
+        (a, b) => new Date(b.receivedDateTime).getTime() - new Date(a.receivedDateTime).getTime()
       );
 
       const limited = allEmails.slice(0, limit);
@@ -131,11 +114,7 @@ function createMcpServer(): McpServer {
       const formatted = limited.map((e) => ({
         subject: e.subject,
         from: `${e.from.emailAddress.name} <${e.from.emailAddress.address}>`,
-        to: e.toRecipients
-          .map(
-            (r) => `${r.emailAddress.name} <${r.emailAddress.address}>`
-          )
-          .join(", "),
+        to: e.toRecipients.map((r) => `${r.emailAddress.name} <${r.emailAddress.address}>`).join(", "),
         date: e.receivedDateTime,
         preview: e.bodyPreview,
         isRead: e.isRead,
@@ -145,12 +124,7 @@ function createMcpServer(): McpServer {
       }));
 
       return {
-        content: [
-          {
-            type: "text" as const,
-            text: JSON.stringify(formatted, null, 2),
-          },
-        ],
+        content: [{ type: "text" as const, text: JSON.stringify(formatted, null, 2) }],
       };
     }
   );
@@ -160,36 +134,19 @@ function createMcpServer(): McpServer {
     "Search emails across connected Outlook accounts by keyword. Searches in subject lines and body previews. Returns matching emails with subject, sender, date, and preview.",
     {
       query: z.string().describe("Search keyword to find in email subjects and body previews"),
-      account_email: z
-        .string()
-        .optional()
-        .describe(
-          "Filter search to a specific account email. If omitted, searches all accounts."
-        ),
-      limit: z
-        .number()
-        .min(1)
-        .max(50)
-        .default(20)
-        .describe("Maximum number of results to return (default: 20, max: 50)"),
+      account_email: z.string().optional().describe("Filter search to a specific account email. If omitted, searches all accounts."),
+      limit: z.number().min(1).max(50).default(20).describe("Maximum number of results to return (default: 20, max: 50)"),
     },
     async ({ query, account_email, limit }) => {
-      const accounts = await storage.getAccounts();
+      const accounts = await storage.getAccountsByUserId(user.id);
       if (accounts.length === 0) {
         return {
-          content: [
-            {
-              type: "text" as const,
-              text: "No Microsoft accounts are connected.",
-            },
-          ],
+          content: [{ type: "text" as const, text: "No Microsoft accounts are connected." }],
         };
       }
 
       const targetAccounts = account_email
-        ? accounts.filter(
-            (a) => a.email.toLowerCase() === account_email.toLowerCase()
-          )
+        ? accounts.filter((a) => a.email.toLowerCase() === account_email.toLowerCase())
         : accounts;
 
       const allEmails: OutlookEmail[] = [];
@@ -205,10 +162,7 @@ function createMcpServer(): McpServer {
           }));
           allEmails.push(...enriched);
         } catch (err: any) {
-          console.error(
-            `MCP: Failed to fetch emails for ${account.email}:`,
-            err.message
-          );
+          console.error(`MCP: Failed to fetch emails for ${account.email}:`, err.message);
         }
       }
 
@@ -222,9 +176,7 @@ function createMcpServer(): McpServer {
       );
 
       filtered.sort(
-        (a, b) =>
-          new Date(b.receivedDateTime).getTime() -
-          new Date(a.receivedDateTime).getTime()
+        (a, b) => new Date(b.receivedDateTime).getTime() - new Date(a.receivedDateTime).getTime()
       );
 
       const limited = filtered.slice(0, limit);
@@ -232,11 +184,7 @@ function createMcpServer(): McpServer {
       const formatted = limited.map((e) => ({
         subject: e.subject,
         from: `${e.from.emailAddress.name} <${e.from.emailAddress.address}>`,
-        to: e.toRecipients
-          .map(
-            (r) => `${r.emailAddress.name} <${r.emailAddress.address}>`
-          )
-          .join(", "),
+        to: e.toRecipients.map((r) => `${r.emailAddress.name} <${r.emailAddress.address}>`).join(", "),
         date: e.receivedDateTime,
         preview: e.bodyPreview,
         isRead: e.isRead,
@@ -249,10 +197,9 @@ function createMcpServer(): McpServer {
         content: [
           {
             type: "text" as const,
-            text:
-              formatted.length > 0
-                ? JSON.stringify(formatted, null, 2)
-                : `No emails found matching "${query}"`,
+            text: formatted.length > 0
+              ? JSON.stringify(formatted, null, 2)
+              : `No emails found matching "${query}"`,
           },
         ],
       };
@@ -264,24 +211,17 @@ function createMcpServer(): McpServer {
     "Get the full content of a specific email by its ID. Returns the complete email body, all recipients, and metadata.",
     {
       email_id: z.string().describe("The ID of the email to retrieve"),
-      account_email: z
-        .string()
-        .describe("The email address of the account that contains this email"),
+      account_email: z.string().describe("The email address of the account that contains this email"),
     },
     async ({ email_id, account_email }) => {
-      const accounts = await storage.getAccounts();
+      const accounts = await storage.getAccountsByUserId(user.id);
       const account = accounts.find(
         (a) => a.email.toLowerCase() === account_email.toLowerCase()
       );
 
       if (!account) {
         return {
-          content: [
-            {
-              type: "text" as const,
-              text: `No connected account found with email: ${account_email}`,
-            },
-          ],
+          content: [{ type: "text" as const, text: `No connected account found with email: ${account_email}` }],
         };
       }
 
@@ -307,42 +247,23 @@ function createMcpServer(): McpServer {
           subject: email.subject,
           from: `${email.from.emailAddress.name} <${email.from.emailAddress.address}>`,
           to: email.toRecipients
-            ?.map(
-              (r: any) =>
-                `${r.emailAddress.name} <${r.emailAddress.address}>`
-            )
+            ?.map((r: any) => `${r.emailAddress.name} <${r.emailAddress.address}>`)
             .join(", "),
           cc: email.ccRecipients
-            ?.map(
-              (r: any) =>
-                `${r.emailAddress.name} <${r.emailAddress.address}>`
-            )
+            ?.map((r: any) => `${r.emailAddress.name} <${r.emailAddress.address}>`)
             .join(", "),
           date: email.receivedDateTime,
           importance: email.importance,
           hasAttachments: email.hasAttachments,
-          body:
-            email.body.contentType === "html"
-              ? stripHtml(email.body.content)
-              : email.body.content,
+          body: email.body.contentType === "html" ? stripHtml(email.body.content) : email.body.content,
         };
 
         return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify(formatted, null, 2),
-            },
-          ],
+          content: [{ type: "text" as const, text: JSON.stringify(formatted, null, 2) }],
         };
       } catch (err: any) {
         return {
-          content: [
-            {
-              type: "text" as const,
-              text: `Error fetching email: ${err.message}`,
-            },
-          ],
+          content: [{ type: "text" as const, text: `Error fetching email: ${err.message}` }],
         };
       }
     }
@@ -350,54 +271,27 @@ function createMcpServer(): McpServer {
 
   server.tool(
     "get_calendar_events",
-    "Fetch calendar events from connected Outlook accounts. Returns upcoming and recent events with subject, time, location, attendees, and online meeting links. By default returns events from the past 7 days through the next 30 days.",
+    "Fetch calendar events from connected Outlook accounts. Returns upcoming and recent events with subject, time, location, attendees, and online meeting links.",
     {
-      account_email: z
-        .string()
-        .optional()
-        .describe(
-          "Filter events to a specific account email. If omitted, fetches from all accounts."
-        ),
-      days_ahead: z
-        .number()
-        .min(1)
-        .max(90)
-        .default(30)
-        .describe("Number of days ahead to fetch events (default: 30, max: 90)"),
-      days_behind: z
-        .number()
-        .min(0)
-        .max(30)
-        .default(7)
-        .describe("Number of days in the past to include (default: 7, max: 30)"),
+      account_email: z.string().optional().describe("Filter events to a specific account email. If omitted, fetches from all accounts."),
+      days_ahead: z.number().min(1).max(90).default(30).describe("Number of days ahead to fetch events (default: 30, max: 90)"),
+      days_behind: z.number().min(0).max(30).default(7).describe("Number of days in the past to include (default: 7, max: 30)"),
     },
     async ({ account_email, days_ahead, days_behind }) => {
-      const accounts = await storage.getAccounts();
+      const accounts = await storage.getAccountsByUserId(user.id);
       if (accounts.length === 0) {
         return {
-          content: [
-            {
-              type: "text" as const,
-              text: "No Microsoft accounts are connected.",
-            },
-          ],
+          content: [{ type: "text" as const, text: "No Microsoft accounts are connected." }],
         };
       }
 
       const targetAccounts = account_email
-        ? accounts.filter(
-            (a) => a.email.toLowerCase() === account_email.toLowerCase()
-          )
+        ? accounts.filter((a) => a.email.toLowerCase() === account_email.toLowerCase())
         : accounts;
 
       if (targetAccounts.length === 0) {
         return {
-          content: [
-            {
-              type: "text" as const,
-              text: `No connected account found with email: ${account_email}`,
-            },
-          ],
+          content: [{ type: "text" as const, text: `No connected account found with email: ${account_email}` }],
         };
       }
 
@@ -433,17 +327,12 @@ function createMcpServer(): McpServer {
           }));
           allEvents.push(...enriched);
         } catch (err: any) {
-          console.error(
-            `MCP: Failed to fetch calendar for ${account.email}:`,
-            err.message
-          );
+          console.error(`MCP: Failed to fetch calendar for ${account.email}:`, err.message);
         }
       }
 
       allEvents.sort(
-        (a, b) =>
-          new Date(a.start.dateTime).getTime() -
-          new Date(b.start.dateTime).getTime()
+        (a, b) => new Date(a.start.dateTime).getTime() - new Date(b.start.dateTime).getTime()
       );
 
       const formatted = allEvents.map((e) => ({
@@ -455,10 +344,7 @@ function createMcpServer(): McpServer {
         organizer: e.organizer
           ? `${e.organizer.emailAddress.name} <${e.organizer.emailAddress.address}>`
           : null,
-        attendees:
-          e.attendees?.map(
-            (a) => `${a.emailAddress.name} <${a.emailAddress.address}>`
-          ) || [],
+        attendees: e.attendees?.map((a) => `${a.emailAddress.name} <${a.emailAddress.address}>`) || [],
         preview: e.bodyPreview,
         showAs: e.showAs,
         isOnlineMeeting: e.isOnlineMeeting,
@@ -470,10 +356,9 @@ function createMcpServer(): McpServer {
         content: [
           {
             type: "text" as const,
-            text:
-              formatted.length > 0
-                ? JSON.stringify(formatted, null, 2)
-                : "No calendar events found in the specified date range.",
+            text: formatted.length > 0
+              ? JSON.stringify(formatted, null, 2)
+              : "No calendar events found in the specified date range.",
           },
         ],
       };
@@ -483,43 +368,59 @@ function createMcpServer(): McpServer {
   return server;
 }
 
-function validateMcpAuth(req: Request, res: Response): boolean {
-  const apiKey = process.env.MCP_API_KEY;
-  if (!apiKey) {
-    return true;
-  }
-
+async function validateMcpAuth(req: Request, res: Response): Promise<User | null> {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
     res.status(401).json({
       jsonrpc: "2.0",
-      error: { code: -32000, message: "Unauthorized: Bearer token required" },
+      error: { code: -32000, message: "Unauthorized: Bearer token required. Use your MCP API key from the Outlook Connector billing page." },
       id: null,
     });
-    return false;
+    return null;
   }
 
   const token = authHeader.slice(7);
-  if (token !== apiKey) {
+  const user = await storage.getUserByMcpApiKey(token);
+
+  if (!user) {
     res.status(403).json({
       jsonrpc: "2.0",
       error: { code: -32000, message: "Forbidden: Invalid API key" },
       id: null,
     });
-    return false;
+    return null;
   }
 
-  return true;
+  const activeStatuses = ["active", "trialing"];
+  if (!activeStatuses.includes(user.subscriptionStatus || "")) {
+    res.status(403).json({
+      jsonrpc: "2.0",
+      error: { code: -32000, message: "Forbidden: Active subscription required to use MCP connector. Visit the Outlook Connector to subscribe." },
+      id: null,
+    });
+    return null;
+  }
+
+  return user;
 }
 
 export function registerMcpRoutes(app: Express): void {
-  const sessions: Record<string, { transport: StreamableHTTPServerTransport; server: McpServer }> = {};
+  const sessions: Record<string, { transport: StreamableHTTPServerTransport; server: McpServer; userId: string }> = {};
 
   app.post("/mcp", async (req: Request, res: Response) => {
-    if (!validateMcpAuth(req, res)) return;
+    const user = await validateMcpAuth(req, res);
+    if (!user) return;
+
     const sessionId = req.headers["mcp-session-id"] as string | undefined;
 
     if (sessionId && sessions[sessionId]) {
+      if (sessions[sessionId].userId !== user.id) {
+        return res.status(403).json({
+          jsonrpc: "2.0",
+          error: { code: -32000, message: "Forbidden: Session belongs to another user" },
+          id: null,
+        });
+      }
       await sessions[sessionId].transport.handleRequest(req, res, req.body);
       return;
     }
@@ -529,14 +430,14 @@ export function registerMcpRoutes(app: Express): void {
         sessionIdGenerator: () => randomUUID(),
       });
 
-      const server = createMcpServer();
+      const server = createMcpServer(user);
       await server.connect(transport);
 
       await transport.handleRequest(req, res, req.body);
 
       const sid = transport.sessionId;
       if (sid) {
-        sessions[sid] = { transport, server };
+        sessions[sid] = { transport, server, userId: user.id };
         transport.onclose = () => {
           delete sessions[sid];
         };
@@ -546,45 +447,54 @@ export function registerMcpRoutes(app: Express): void {
 
     res.status(400).json({
       jsonrpc: "2.0",
-      error: {
-        code: -32000,
-        message: "Bad Request: No valid session ID provided",
-      },
+      error: { code: -32000, message: "Bad Request: No valid session ID provided" },
       id: null,
     });
   });
 
   app.get("/mcp", async (req: Request, res: Response) => {
-    if (!validateMcpAuth(req, res)) return;
+    const user = await validateMcpAuth(req, res);
+    if (!user) return;
+
     const sessionId = req.headers["mcp-session-id"] as string | undefined;
     if (sessionId && sessions[sessionId]) {
+      if (sessions[sessionId].userId !== user.id) {
+        return res.status(403).json({
+          jsonrpc: "2.0",
+          error: { code: -32000, message: "Forbidden: Session belongs to another user" },
+          id: null,
+        });
+      }
       await sessions[sessionId].transport.handleRequest(req, res);
     } else {
       res.status(400).json({
         jsonrpc: "2.0",
-        error: {
-          code: -32000,
-          message: "Bad Request: No valid session ID provided",
-        },
+        error: { code: -32000, message: "Bad Request: No valid session ID provided" },
         id: null,
       });
     }
   });
 
   app.delete("/mcp", async (req: Request, res: Response) => {
-    if (!validateMcpAuth(req, res)) return;
+    const user = await validateMcpAuth(req, res);
+    if (!user) return;
+
     const sessionId = req.headers["mcp-session-id"] as string | undefined;
     if (sessionId && sessions[sessionId]) {
+      if (sessions[sessionId].userId !== user.id) {
+        return res.status(403).json({
+          jsonrpc: "2.0",
+          error: { code: -32000, message: "Forbidden: Session belongs to another user" },
+          id: null,
+        });
+      }
       await sessions[sessionId].transport.handleRequest(req, res);
       await sessions[sessionId].server.close();
       delete sessions[sessionId];
     } else {
       res.status(400).json({
         jsonrpc: "2.0",
-        error: {
-          code: -32000,
-          message: "Bad Request: No valid session ID provided",
-        },
+        error: { code: -32000, message: "Bad Request: No valid session ID provided" },
         id: null,
       });
     }

@@ -1,4 +1,4 @@
-import type { Express } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { randomUUID } from "crypto";
@@ -10,22 +10,59 @@ import {
   getEmails,
   getCalendarEvents,
 } from "./microsoft";
+import { getUncachableStripeClient, getStripePublishableKey } from "./stripeClient";
 import type { OutlookEmail, OutlookCalendarEvent } from "@shared/schema";
+
+function requireAuth(req: Request, res: Response, next: NextFunction) {
+  if (!req.session.userId) {
+    return res.status(401).json({ message: "Not authenticated" });
+  }
+  next();
+}
 
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
 
-  // Start Microsoft OAuth flow
+  app.get("/api/auth/me", async (req, res) => {
+    if (!req.session.userId) {
+      return res.json({ user: null });
+    }
+    try {
+      const user = await storage.getUser(req.session.userId);
+      if (!user) {
+        req.session.destroy(() => {});
+        return res.json({ user: null });
+      }
+      res.json({
+        user: {
+          id: user.id,
+          email: user.email,
+          displayName: user.displayName,
+          subscriptionStatus: user.subscriptionStatus,
+          stripeCustomerId: user.stripeCustomerId,
+          stripeSubscriptionId: user.stripeSubscriptionId,
+        },
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.get("/api/auth/microsoft", (req, res) => {
     const state = randomUUID();
     req.session.oauthState = state;
+    if (req.query.connect === "true") {
+      if (!req.session.userId) {
+        return res.redirect("/?error=not_authenticated");
+      }
+      req.session.connectOnly = true;
+    }
     const authUrl = getAuthUrl(state);
     res.redirect(authUrl);
   });
 
-  // OAuth callback
   app.get("/api/auth/callback", async (req, res) => {
     const { code, error, error_description, state } = req.query;
 
@@ -40,6 +77,8 @@ export async function registerRoutes(
     }
 
     delete req.session.oauthState;
+    const connectOnly = req.session.connectOnly;
+    delete req.session.connectOnly;
 
     if (!code || typeof code !== "string") {
       return res.redirect("/?error=no_code");
@@ -51,8 +90,8 @@ export async function registerRoutes(
 
       const email = profile.mail || profile.userPrincipalName || "";
       const displayName = profile.displayName || email;
+      const microsoftId = profile.id;
 
-      // Determine account type based on the email domain
       const isPersonal =
         email.endsWith("@outlook.com") ||
         email.endsWith("@hotmail.com") ||
@@ -62,8 +101,45 @@ export async function registerRoutes(
 
       const tokenExpiry = new Date(Date.now() + tokens.expires_in * 1000);
 
-      // Check if account already exists, update tokens if so
-      const existingAccount = await storage.getAccountByEmail(email);
+      if (connectOnly && req.session.userId) {
+        const userId = req.session.userId;
+        const existingAccount = await storage.getAccountByEmailAndUser(email, userId);
+        if (existingAccount) {
+          await storage.updateAccountTokens(
+            existingAccount.id,
+            tokens.access_token,
+            tokens.refresh_token,
+            tokenExpiry
+          );
+        } else {
+          await storage.createAccount({
+            userId,
+            email,
+            displayName,
+            accountType,
+            accessToken: tokens.access_token,
+            refreshToken: tokens.refresh_token,
+            tokenExpiry,
+            isActive: true,
+          });
+        }
+        return res.redirect("/accounts?connected=true");
+      }
+
+      let user = await storage.getUserByMicrosoftId(microsoftId);
+      if (!user) {
+        user = await storage.createUser({
+          email,
+          displayName,
+          microsoftId,
+        });
+      } else {
+        await storage.updateUser(user.id, { email, displayName });
+      }
+
+      req.session.userId = user.id;
+
+      const existingAccount = await storage.getAccountByEmailAndUser(email, user.id);
       if (existingAccount) {
         await storage.updateAccountTokens(
           existingAccount.id,
@@ -73,6 +149,7 @@ export async function registerRoutes(
         );
       } else {
         await storage.createAccount({
+          userId: user.id,
           email,
           displayName,
           accountType,
@@ -83,17 +160,22 @@ export async function registerRoutes(
         });
       }
 
-      res.redirect("/accounts?connected=true");
+      res.redirect("/inbox");
     } catch (err: any) {
       console.error("OAuth callback error:", err.message);
       res.redirect("/?error=token_exchange_failed");
     }
   });
 
-  // Get all connected accounts (excluding sensitive token data)
-  app.get("/api/accounts", async (_req, res) => {
+  app.post("/api/auth/logout", (req, res) => {
+    req.session.destroy(() => {
+      res.json({ success: true });
+    });
+  });
+
+  app.get("/api/accounts", requireAuth, async (req, res) => {
     try {
-      const accounts = await storage.getAccounts();
+      const accounts = await storage.getAccountsByUserId(req.session.userId!);
       const safeAccounts = accounts.map((a) => ({
         id: a.id,
         email: a.email,
@@ -108,9 +190,12 @@ export async function registerRoutes(
     }
   });
 
-  // Delete a connected account
-  app.delete("/api/accounts/:id", async (req, res) => {
+  app.delete("/api/accounts/:id", requireAuth, async (req, res) => {
     try {
+      const account = await storage.getAccount(req.params.id);
+      if (!account || account.userId !== req.session.userId) {
+        return res.status(404).json({ message: "Account not found" });
+      }
       await storage.deleteAccount(req.params.id);
       res.json({ success: true });
     } catch (err: any) {
@@ -118,10 +203,9 @@ export async function registerRoutes(
     }
   });
 
-  // Get emails from all connected accounts
-  app.get("/api/emails", async (_req, res) => {
+  app.get("/api/emails", requireAuth, async (req, res) => {
     try {
-      const accounts = await storage.getAccounts();
+      const accounts = await storage.getAccountsByUserId(req.session.userId!);
       if (accounts.length === 0) {
         return res.json([]);
       }
@@ -143,7 +227,6 @@ export async function registerRoutes(
         }
       }
 
-      // Sort all emails by date
       allEmails.sort(
         (a, b) =>
           new Date(b.receivedDateTime).getTime() - new Date(a.receivedDateTime).getTime()
@@ -155,10 +238,9 @@ export async function registerRoutes(
     }
   });
 
-  // Get calendar events from all connected accounts
-  app.get("/api/calendar", async (_req, res) => {
+  app.get("/api/calendar", requireAuth, async (req, res) => {
     try {
-      const accounts = await storage.getAccounts();
+      const accounts = await storage.getAccountsByUserId(req.session.userId!);
       if (accounts.length === 0) {
         return res.json([]);
       }
@@ -180,13 +262,173 @@ export async function registerRoutes(
         }
       }
 
-      // Sort events by start time
       allEvents.sort(
         (a, b) =>
           new Date(a.start.dateTime).getTime() - new Date(b.start.dateTime).getTime()
       );
 
       res.json(allEvents);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/stripe/publishable-key", async (_req, res) => {
+    try {
+      const key = await getStripePublishableKey();
+      res.json({ publishableKey: key });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/products-with-prices", async (_req, res) => {
+    try {
+      const rows = await storage.listProductsWithPrices();
+      const productsMap = new Map();
+      for (const row of rows) {
+        if (!productsMap.has(row.product_id)) {
+          productsMap.set(row.product_id, {
+            id: row.product_id,
+            name: row.product_name,
+            description: row.product_description,
+            active: row.product_active,
+            metadata: row.product_metadata,
+            prices: []
+          });
+        }
+        if (row.price_id) {
+          productsMap.get(row.product_id).prices.push({
+            id: row.price_id,
+            unit_amount: row.unit_amount,
+            currency: row.currency,
+            recurring: row.recurring,
+            active: row.price_active,
+          });
+        }
+      }
+      res.json({ data: Array.from(productsMap.values()) });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/checkout", requireAuth, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      if (!user) return res.status(401).json({ message: "User not found" });
+
+      const { priceId } = req.body;
+      if (!priceId) return res.status(400).json({ message: "priceId is required" });
+
+      const stripe = await getUncachableStripeClient();
+
+      let customerId = user.stripeCustomerId;
+      if (!customerId) {
+        const customer = await stripe.customers.create({
+          email: user.email,
+          metadata: { userId: user.id },
+        });
+        await storage.updateUser(user.id, { stripeCustomerId: customer.id });
+        customerId = customer.id;
+      }
+
+      const session = await stripe.checkout.sessions.create({
+        customer: customerId,
+        payment_method_types: ['card'],
+        line_items: [{ price: priceId, quantity: 1 }],
+        mode: 'subscription',
+        success_url: `${req.protocol}://${req.get('host')}/billing?success=true`,
+        cancel_url: `${req.protocol}://${req.get('host')}/billing?canceled=true`,
+      });
+
+      res.json({ url: session.url });
+    } catch (err: any) {
+      console.error("Checkout error:", err);
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/billing/portal", requireAuth, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      if (!user?.stripeCustomerId) {
+        return res.status(400).json({ message: "No billing account found" });
+      }
+
+      const stripe = await getUncachableStripeClient();
+      const session = await stripe.billingPortal.sessions.create({
+        customer: user.stripeCustomerId,
+        return_url: `${req.protocol}://${req.get('host')}/billing`,
+      });
+
+      res.json({ url: session.url });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/subscription", requireAuth, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      if (!user?.stripeSubscriptionId) {
+        return res.json({ subscription: null, status: user?.subscriptionStatus || "none" });
+      }
+
+      const subscription = await storage.getSubscription(user.stripeSubscriptionId);
+      res.json({ subscription, status: user.subscriptionStatus });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/subscription/sync", requireAuth, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      if (!user?.stripeCustomerId) {
+        return res.json({ status: "none" });
+      }
+
+      const stripe = await getUncachableStripeClient();
+      const subscriptions = await stripe.subscriptions.list({
+        customer: user.stripeCustomerId,
+        status: 'all',
+        limit: 1,
+      });
+
+      if (subscriptions.data.length > 0) {
+        const sub = subscriptions.data[0];
+        await storage.updateUser(user.id, {
+          stripeSubscriptionId: sub.id,
+          subscriptionStatus: sub.status,
+        });
+        res.json({ status: sub.status });
+      } else {
+        await storage.updateUser(user.id, {
+          stripeSubscriptionId: null,
+          subscriptionStatus: "none",
+        });
+        res.json({ status: "none" });
+      }
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/mcp-key", requireAuth, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      if (!user) return res.status(404).json({ message: "User not found" });
+      res.json({ mcpApiKey: user.mcpApiKey });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/mcp-key/regenerate", requireAuth, async (req, res) => {
+    try {
+      const newKey = await storage.regenerateMcpApiKey(req.session.userId!);
+      res.json({ mcpApiKey: newKey });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }

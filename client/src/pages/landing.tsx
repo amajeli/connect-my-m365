@@ -1,0 +1,195 @@
+import { useQuery } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { ThemeToggle } from "@/components/theme-toggle";
+import {
+  Mail,
+  Calendar,
+  Zap,
+  Shield,
+  Check,
+  ArrowRight,
+  LogIn,
+} from "lucide-react";
+
+export default function LandingPage() {
+  const { data: productsData } = useQuery<{ data: any[] }>({
+    queryKey: ["/api/products-with-prices"],
+  });
+
+  const product = productsData?.data?.[0];
+  const monthlyPrice = product?.prices?.find((p: any) => p.recurring?.interval === "month");
+  const yearlyPrice = product?.prices?.find((p: any) => p.recurring?.interval === "year");
+
+  return (
+    <div className="min-h-screen bg-background">
+      <header className="flex items-center justify-between gap-2 p-4 md:px-8 border-b sticky top-0 z-50 bg-background">
+        <div className="flex items-center gap-2">
+          <Mail className="w-5 h-5 text-[#0078D4]" />
+          <span className="font-semibold text-sm">Outlook Connector</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <ThemeToggle />
+          <a href="/api/auth/microsoft" data-testid="button-sign-in">
+            <Button variant="default" className="gap-2">
+              <LogIn className="w-4 h-4" />
+              Sign in with Microsoft
+            </Button>
+          </a>
+        </div>
+      </header>
+
+      <section className="py-16 md:py-24 px-4 md:px-8 max-w-4xl mx-auto text-center">
+        <Badge variant="secondary" className="mb-4">MCP Custom Connector</Badge>
+        <h1 className="text-3xl md:text-5xl font-bold tracking-tight mb-4">
+          Your Outlook in Claude.ai
+        </h1>
+        <p className="text-lg text-muted-foreground max-w-2xl mx-auto mb-8">
+          Connect your Microsoft Outlook email and calendar directly to Claude.
+          Read, search, and summarize emails and events in natural language.
+        </p>
+        <a href="/api/auth/microsoft" data-testid="button-hero-cta">
+          <Button size="lg" className="gap-2">
+            Get Started
+            <ArrowRight className="w-4 h-4" />
+          </Button>
+        </a>
+      </section>
+
+      <section className="py-12 px-4 md:px-8 max-w-5xl mx-auto">
+        <div className="grid md:grid-cols-3 gap-4">
+          <Card className="p-6">
+            <Mail className="w-8 h-8 text-[#0078D4] mb-3" />
+            <h3 className="font-semibold mb-1">Email Access</h3>
+            <p className="text-sm text-muted-foreground">
+              Read, search, and summarize your inbox directly from Claude conversations.
+            </p>
+          </Card>
+          <Card className="p-6">
+            <Calendar className="w-8 h-8 text-[#0078D4] mb-3" />
+            <h3 className="font-semibold mb-1">Calendar Events</h3>
+            <p className="text-sm text-muted-foreground">
+              View upcoming meetings, check availability, and get event details.
+            </p>
+          </Card>
+          <Card className="p-6">
+            <Zap className="w-8 h-8 text-[#0078D4] mb-3" />
+            <h3 className="font-semibold mb-1">MCP Protocol</h3>
+            <p className="text-sm text-muted-foreground">
+              Native Claude.ai integration through Model Context Protocol custom connectors.
+            </p>
+          </Card>
+        </div>
+      </section>
+
+      <section className="py-12 px-4 md:px-8 max-w-3xl mx-auto" id="pricing" data-testid="section-pricing">
+        <h2 className="text-2xl font-bold text-center mb-2">Simple Pricing</h2>
+        <p className="text-center text-muted-foreground mb-8">
+          One plan, full access to all features.
+        </p>
+
+        <Card className="p-6 md:p-8 max-w-md mx-auto">
+          <h3 className="text-xl font-bold mb-1">{product?.name || "Pro Plan"}</h3>
+          <p className="text-sm text-muted-foreground mb-4">
+            {product?.description || "Full access to Outlook email and calendar in Claude.ai"}
+          </p>
+
+          <div className="flex items-baseline gap-1 mb-1">
+            <span className="text-3xl font-bold">
+              ${monthlyPrice ? (monthlyPrice.unit_amount / 100).toFixed(2) : "9.99"}
+            </span>
+            <span className="text-muted-foreground">/month</span>
+          </div>
+          {yearlyPrice && (
+            <p className="text-xs text-muted-foreground mb-4">
+              or ${(yearlyPrice.unit_amount / 100).toFixed(2)}/year (save ~33%)
+            </p>
+          )}
+
+          <ul className="space-y-2 mb-6">
+            {[
+              "Connect multiple Outlook accounts",
+              "Email inbox access via Claude.ai",
+              "Calendar events in Claude conversations",
+              "Search and filter emails",
+              "Personal MCP API key",
+              "Work + personal accounts",
+            ].map((feature) => (
+              <li key={feature} className="flex items-center gap-2 text-sm">
+                <Check className="w-4 h-4 text-green-600 dark:text-green-400 shrink-0" />
+                {feature}
+              </li>
+            ))}
+          </ul>
+
+          <a href="/api/auth/microsoft" data-testid="button-pricing-cta">
+            <Button className="w-full gap-2">
+              <LogIn className="w-4 h-4" />
+              Start with Microsoft Sign In
+            </Button>
+          </a>
+        </Card>
+      </section>
+
+      <section className="py-12 px-4 md:px-8 max-w-3xl mx-auto">
+        <h2 className="text-2xl font-bold text-center mb-8">How it Works</h2>
+        <div className="space-y-6">
+          {[
+            {
+              step: "1",
+              title: "Sign in with Microsoft",
+              desc: "Use your work or personal Microsoft account to sign in and connect your Outlook.",
+            },
+            {
+              step: "2",
+              title: "Subscribe",
+              desc: "Choose a monthly or yearly plan to activate your MCP connector.",
+            },
+            {
+              step: "3",
+              title: "Add to Claude.ai",
+              desc: "Copy your personal MCP API key and add the connector URL in Claude.ai settings.",
+            },
+            {
+              step: "4",
+              title: "Start chatting",
+              desc: "Ask Claude about your emails, calendar events, and more — all in natural language.",
+            },
+          ].map(({ step, title, desc }) => (
+            <div key={step} className="flex gap-4">
+              <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0 text-sm font-semibold text-primary">
+                {step}
+              </div>
+              <div>
+                <h3 className="font-medium">{title}</h3>
+                <p className="text-sm text-muted-foreground">{desc}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="py-12 px-4 md:px-8 max-w-3xl mx-auto">
+        <Card className="p-6">
+          <div className="flex items-start gap-3">
+            <Shield className="w-6 h-6 text-[#0078D4] shrink-0 mt-0.5" />
+            <div>
+              <h3 className="font-semibold mb-1">Security & Privacy</h3>
+              <p className="text-sm text-muted-foreground">
+                We use Microsoft OAuth2 with read-only permissions. We never store your email
+                content — data is fetched live from Microsoft Graph API. Your access tokens
+                are encrypted and only used to make API calls on your behalf. Each user gets
+                a unique MCP API key for isolated, secure access.
+              </p>
+            </div>
+          </div>
+        </Card>
+      </section>
+
+      <footer className="border-t py-6 px-4 text-center text-xs text-muted-foreground">
+        Outlook Connector for Claude.ai
+      </footer>
+    </div>
+  );
+}

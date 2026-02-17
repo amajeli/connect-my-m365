@@ -381,7 +381,7 @@ function EmptyAccountState() {
         Connect your work or personal Microsoft account to view your emails and
         calendar events. You can then copy the data for use in Claude.ai.
       </p>
-      <a href="/api/auth/microsoft" data-testid="button-connect-first-account">
+      <a href="/api/auth/microsoft?connect=true" data-testid="button-connect-first-account">
         <Button className="gap-2">
           <Mail className="w-4 h-4" />
           Connect Microsoft Account

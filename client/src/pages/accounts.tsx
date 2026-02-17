@@ -69,7 +69,7 @@ export default function AccountsPage() {
             Manage your Microsoft Outlook connections
           </p>
         </div>
-        <a href="/api/auth/microsoft" data-testid="button-add-new-account">
+        <a href="/api/auth/microsoft?connect=true" data-testid="button-add-new-account">
           <Button className="gap-2">
             <Plus className="w-4 h-4" />
             Add Account
@@ -167,7 +167,7 @@ export default function AccountsPage() {
               Connect your Microsoft work or personal account to start pulling
               emails and calendar events for Claude.ai.
             </p>
-            <a href="/api/auth/microsoft" data-testid="button-connect-from-empty">
+            <a href="/api/auth/microsoft?connect=true" data-testid="button-connect-from-empty">
               <Button className="gap-2">
                 <Plus className="w-4 h-4" />
                 Connect Microsoft Account

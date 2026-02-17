@@ -1,6 +1,7 @@
-import { Mail, Calendar, Settings, Plus, CircleDot, LogOut } from "lucide-react";
+import { Mail, Calendar, Settings, CreditCard, Plus, LogOut } from "lucide-react";
 import { useLocation, Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@/lib/auth";
 import type { AccountInfo } from "@shared/schema";
 import {
   Sidebar,
@@ -23,14 +24,16 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
 const navItems = [
-  { title: "Inbox", url: "/", icon: Mail },
+  { title: "Inbox", url: "/inbox", icon: Mail },
   { title: "Calendar", url: "/calendar", icon: Calendar },
   { title: "Accounts", url: "/accounts", icon: Settings },
+  { title: "Billing", url: "/billing", icon: CreditCard },
 ];
 
 export function AppSidebar() {
   const [location] = useLocation();
   const { toast } = useToast();
+  const { user, logout } = useAuth();
 
   const { data: accounts, isLoading: accountsLoading } = useQuery<AccountInfo[]>({
     queryKey: ["/api/accounts"],
@@ -80,11 +83,7 @@ export function AppSidebar() {
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton
                     asChild
-                    isActive={
-                      item.url === "/"
-                        ? location === "/"
-                        : location.startsWith(item.url)
-                    }
+                    isActive={location.startsWith(item.url)}
                   >
                     <Link href={item.url} data-testid={`link-nav-${item.title.toLowerCase()}`}>
                       <item.icon className="w-4 h-4" />
@@ -144,13 +143,34 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter className="p-2">
-        <a href="/api/auth/microsoft" data-testid="button-add-account">
+      <SidebarFooter className="p-2 space-y-2">
+        <a href="/api/auth/microsoft?connect=true" data-testid="button-add-account">
           <Button variant="outline" className="w-full gap-2">
             <Plus className="w-4 h-4" />
             Add Account
           </Button>
         </a>
+        {user && (
+          <div className="flex items-center gap-2 px-2 py-1.5">
+            <Avatar className="h-7 w-7">
+              <AvatarFallback className="text-[10px] bg-primary/10 text-primary">
+                {getInitials(user.displayName)}
+              </AvatarFallback>
+            </Avatar>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-medium truncate">{user.displayName}</p>
+              <p className="text-[10px] text-muted-foreground truncate">{user.email}</p>
+            </div>
+            <Button
+              size="icon"
+              variant="ghost"
+              onClick={logout}
+              data-testid="button-logout"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+            </Button>
+          </div>
+        )}
       </SidebarFooter>
     </Sidebar>
   );
