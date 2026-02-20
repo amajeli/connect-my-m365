@@ -405,7 +405,7 @@ export async function registerRoutes(
     try {
       const user = await storage.getUser(req.session.userId!);
       if (!user?.stripeCustomerId) {
-        return res.json({ status: "none" });
+        return res.json({ status: user?.subscriptionStatus || "none" });
       }
 
       const stripe = await getUncachableStripeClient();
@@ -423,12 +423,29 @@ export async function registerRoutes(
         });
         res.json({ status: sub.status });
       } else {
+        const keepStatus = user.subscriptionStatus === "free" ? "free" : "none";
         await storage.updateUser(user.id, {
           stripeSubscriptionId: null,
-          subscriptionStatus: "none",
+          subscriptionStatus: keepStatus,
         });
-        res.json({ status: "none" });
+        res.json({ status: keepStatus });
       }
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/subscription/free", requireAuth, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      if (!user) return res.status(404).json({ message: "User not found" });
+      if (user.subscriptionStatus === "active" || user.subscriptionStatus === "trialing") {
+        return res.json({ status: user.subscriptionStatus, message: "Already has a paid subscription" });
+      }
+      await storage.updateUser(user.id, {
+        subscriptionStatus: "free",
+      });
+      res.json({ status: "free" });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }

@@ -47,6 +47,8 @@ export default function BillingPage() {
   const yearlyPrice = product?.prices?.find((p: any) => p.recurring?.interval === "year");
 
   const isSubscribed = user?.subscriptionStatus === "active" || user?.subscriptionStatus === "trialing";
+  const isFree = user?.subscriptionStatus === "free";
+  const hasAccess = isSubscribed || isFree;
 
   const handleCheckout = async (priceId: string) => {
     try {
@@ -57,6 +59,16 @@ export default function BillingPage() {
       }
     } catch (err: any) {
       toast({ title: "Checkout failed", description: err.message, variant: "destructive" });
+    }
+  };
+
+  const handleActivateFree = async () => {
+    try {
+      await apiRequest("POST", "/api/subscription/free");
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      toast({ title: "Free tier activated", description: "Your MCP connector is now ready to use for testing." });
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
     }
   };
 
@@ -108,8 +120,8 @@ export default function BillingPage() {
         <div className="flex items-center gap-2 mb-3">
           <CreditCard className="w-5 h-5 text-muted-foreground" />
           <h2 className="font-medium">Subscription</h2>
-          <Badge variant={isSubscribed ? "default" : "secondary"}>
-            {isSubscribed ? "Active" : user.subscriptionStatus === "past_due" ? "Past Due" : "Inactive"}
+          <Badge variant={hasAccess ? "default" : "secondary"}>
+            {isSubscribed ? "Active" : isFree ? "Free" : user.subscriptionStatus === "past_due" ? "Past Due" : "Inactive"}
           </Badge>
         </div>
 
@@ -123,12 +135,38 @@ export default function BillingPage() {
               Manage Billing
             </Button>
           </div>
+        ) : isFree ? (
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              You're on the Free testing tier. MCP connector is active for testing purposes.
+            </p>
+            <div className="flex gap-3 flex-wrap">
+              {monthlyPrice && (
+                <Button
+                  onClick={() => handleCheckout(monthlyPrice.id)}
+                  className="gap-2"
+                  data-testid="button-upgrade-monthly"
+                >
+                  <Zap className="w-4 h-4" />
+                  Upgrade to ${(monthlyPrice.unit_amount / 100).toFixed(2)}/month
+                </Button>
+              )}
+            </div>
+          </div>
         ) : (
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
               Start your free 5-day trial to activate the MCP connector and connect Claude.ai to your Outlook. No charge during the trial period.
             </p>
             <div className="flex gap-3 flex-wrap">
+              <Button
+                variant="outline"
+                onClick={handleActivateFree}
+                className="gap-2"
+                data-testid="button-activate-free"
+              >
+                Activate Free Tier
+              </Button>
               {monthlyPrice && (
                 <Button
                   onClick={() => handleCheckout(monthlyPrice.id)}

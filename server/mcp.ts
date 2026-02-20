@@ -13,7 +13,7 @@ import {
 import type { User, OutlookEmail, OutlookCalendarEvent } from "@shared/schema";
 
 function checkSubscription(user: User): string | null {
-  const activeStatuses = ["active", "trialing"];
+  const activeStatuses = ["active", "trialing", "free"];
   if (!activeStatuses.includes(user.subscriptionStatus || "")) {
     return "Active subscription required to use Outlook Connector tools. Please visit the Outlook Connector web app to subscribe first.";
   }
