@@ -14,6 +14,7 @@ const SCOPES = [
   "Mail.Read",
   "Calendars.Read",
   "User.Read",
+  "Files.Read",
 ];
 
 function getRedirectUri(requestHost?: string): string {
@@ -144,6 +145,94 @@ export async function getEmails(accessToken: string, top: number = 50) {
 
   const data = await response.json();
   return data.value || [];
+}
+
+export async function listDriveItems(accessToken: string, path: string = "root", top: number = 50) {
+  const endpoint = path === "root" || path === ""
+    ? `https://graph.microsoft.com/v1.0/me/drive/root/children`
+    : `https://graph.microsoft.com/v1.0/me/drive/root:/${encodeURIComponent(path)}:/children`;
+
+  const response = await fetch(
+    `${endpoint}?$select=id,name,size,file,folder,lastModifiedDateTime,createdDateTime,webUrl,parentReference&$top=${top}&$orderby=name`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Failed to list OneDrive items: ${error}`);
+  }
+
+  const data = await response.json();
+  return data.value || [];
+}
+
+export async function searchDriveItems(accessToken: string, query: string, top: number = 25) {
+  const response = await fetch(
+    `https://graph.microsoft.com/v1.0/me/drive/root/search(q='${encodeURIComponent(query)}')?$select=id,name,size,file,folder,lastModifiedDateTime,createdDateTime,webUrl,parentReference&$top=${top}`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Failed to search OneDrive: ${error}`);
+  }
+
+  const data = await response.json();
+  return data.value || [];
+}
+
+export async function getDriveItemContent(accessToken: string, itemId: string): Promise<{ metadata: any; content: string | null; mimeType: string }> {
+  const metaResponse = await fetch(
+    `https://graph.microsoft.com/v1.0/me/drive/items/${itemId}?$select=id,name,size,file,folder,lastModifiedDateTime,createdDateTime,webUrl,parentReference`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    }
+  );
+
+  if (!metaResponse.ok) {
+    const error = await metaResponse.text();
+    throw new Error(`Failed to fetch OneDrive item: ${error}`);
+  }
+
+  const metadata = await metaResponse.json();
+  const mimeType: string = metadata.file?.mimeType || "application/octet-stream";
+
+  const TEXT_MIMETYPES = [
+    "text/plain",
+    "text/csv",
+    "text/markdown",
+    "text/html",
+    "text/css",
+    "text/javascript",
+    "application/json",
+    "application/xml",
+    "text/xml",
+  ];
+
+  const isTextFile = TEXT_MIMETYPES.some((t) => mimeType.startsWith(t)) ||
+    metadata.name?.match(/\.(txt|md|csv|json|xml|html|htm|css|js|ts|py|sh|yaml|yml|log)$/i);
+
+  const MAX_TEXT_SIZE = 512 * 1024;
+
+  if (isTextFile && metadata.size && metadata.size <= MAX_TEXT_SIZE) {
+    const contentResponse = await fetch(
+      `https://graph.microsoft.com/v1.0/me/drive/items/${itemId}/content`,
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      }
+    );
+
+    if (contentResponse.ok) {
+      const text = await contentResponse.text();
+      return { metadata, content: text, mimeType };
+    }
+  }
+
+  return { metadata, content: null, mimeType };
 }
 
 export async function getCalendarEvents(accessToken: string) {

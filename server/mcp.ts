@@ -9,6 +9,9 @@ import {
   getValidAccessToken,
   getEmails,
   getCalendarEvents,
+  listDriveItems,
+  searchDriveItems,
+  getDriveItemContent,
 } from "./microsoft";
 import type { User, OutlookEmail, OutlookCalendarEvent } from "@shared/schema";
 
@@ -390,6 +393,175 @@ function createMcpServer(user: User): McpServer {
           },
         ],
       };
+    }
+  );
+
+  server.tool(
+    "list_onedrive_files",
+    "List files and folders in the user's OneDrive. Browse any folder path or list the root. Returns file names, types, sizes, last modified dates, and web links. Use the item ID with get_onedrive_file_content to read a specific file.",
+    {
+      account_email: z.string().describe("The email address of the Microsoft account whose OneDrive to browse"),
+      folder_path: z
+        .string()
+        .optional()
+        .describe("Folder path to list (e.g. 'Documents', 'Documents/Projects'). Omit or use 'root' for the OneDrive root."),
+      limit: z.number().min(1).max(100).default(50).describe("Maximum number of items to return (default: 50, max: 100)"),
+    },
+    async ({ account_email, folder_path, limit }) => {
+      const subError = checkSubscription(user);
+      if (subError) return { content: [{ type: "text" as const, text: subError }] };
+
+      const accounts = await storage.getAccountsByUserId(user.id);
+      const account = accounts.find((a) => a.email.toLowerCase() === account_email.toLowerCase());
+
+      if (!account) {
+        return {
+          content: [{ type: "text" as const, text: `No connected account found with email: ${account_email}` }],
+        };
+      }
+
+      try {
+        const accessToken = await getValidAccessToken(account.id);
+        const items = await listDriveItems(accessToken, folder_path || "root", limit);
+
+        if (items.length === 0) {
+          return {
+            content: [{ type: "text" as const, text: `No files found in ${folder_path || "root"}.` }],
+          };
+        }
+
+        const formatted = items.map((item: any) => ({
+          id: item.id,
+          name: item.name,
+          type: item.folder ? "folder" : "file",
+          mimeType: item.file?.mimeType || null,
+          size: item.size != null ? item.size : null,
+          lastModified: item.lastModifiedDateTime,
+          created: item.createdDateTime,
+          webUrl: item.webUrl,
+          parentPath: item.parentReference?.path?.replace("/drive/root:", "") || "/",
+        }));
+
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify(formatted, null, 2) }],
+        };
+      } catch (err: any) {
+        return {
+          content: [{ type: "text" as const, text: `Error listing OneDrive files: ${err.message}` }],
+        };
+      }
+    }
+  );
+
+  server.tool(
+    "search_onedrive_files",
+    "Search for files in the user's OneDrive by name or keyword. Returns matching files and folders with their IDs, types, sizes, and web links.",
+    {
+      account_email: z.string().describe("The email address of the Microsoft account whose OneDrive to search"),
+      query: z.string().describe("Search keyword to find files by name or content"),
+      limit: z.number().min(1).max(50).default(25).describe("Maximum number of results to return (default: 25, max: 50)"),
+    },
+    async ({ account_email, query, limit }) => {
+      const subError = checkSubscription(user);
+      if (subError) return { content: [{ type: "text" as const, text: subError }] };
+
+      const accounts = await storage.getAccountsByUserId(user.id);
+      const account = accounts.find((a) => a.email.toLowerCase() === account_email.toLowerCase());
+
+      if (!account) {
+        return {
+          content: [{ type: "text" as const, text: `No connected account found with email: ${account_email}` }],
+        };
+      }
+
+      try {
+        const accessToken = await getValidAccessToken(account.id);
+        const items = await searchDriveItems(accessToken, query, limit);
+
+        if (items.length === 0) {
+          return {
+            content: [{ type: "text" as const, text: `No files found matching "${query}".` }],
+          };
+        }
+
+        const formatted = items.map((item: any) => ({
+          id: item.id,
+          name: item.name,
+          type: item.folder ? "folder" : "file",
+          mimeType: item.file?.mimeType || null,
+          size: item.size != null ? item.size : null,
+          lastModified: item.lastModifiedDateTime,
+          webUrl: item.webUrl,
+          parentPath: item.parentReference?.path?.replace("/drive/root:", "") || "/",
+        }));
+
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify(formatted, null, 2) }],
+        };
+      } catch (err: any) {
+        return {
+          content: [{ type: "text" as const, text: `Error searching OneDrive: ${err.message}` }],
+        };
+      }
+    }
+  );
+
+  server.tool(
+    "get_onedrive_file_content",
+    "Get the content of a specific OneDrive file by its ID. For plain text files (txt, md, csv, json, xml, etc.) under 512 KB, returns the full file content. For other file types (Office documents, PDFs, images), returns metadata and a web link to open the file.",
+    {
+      account_email: z.string().describe("The email address of the Microsoft account that owns the file"),
+      item_id: z.string().describe("The ID of the OneDrive file (obtained from list_onedrive_files or search_onedrive_files)"),
+    },
+    async ({ account_email, item_id }) => {
+      const subError = checkSubscription(user);
+      if (subError) return { content: [{ type: "text" as const, text: subError }] };
+
+      const accounts = await storage.getAccountsByUserId(user.id);
+      const account = accounts.find((a) => a.email.toLowerCase() === account_email.toLowerCase());
+
+      if (!account) {
+        return {
+          content: [{ type: "text" as const, text: `No connected account found with email: ${account_email}` }],
+        };
+      }
+
+      try {
+        const accessToken = await getValidAccessToken(account.id);
+        const { metadata, content, mimeType } = await getDriveItemContent(accessToken, item_id);
+
+        if (content !== null) {
+          const result = {
+            name: metadata.name,
+            mimeType,
+            size: metadata.size,
+            lastModified: metadata.lastModifiedDateTime,
+            webUrl: metadata.webUrl,
+            content,
+          };
+          return {
+            content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+          };
+        }
+
+        const result = {
+          name: metadata.name,
+          mimeType,
+          size: metadata.size,
+          lastModified: metadata.lastModifiedDateTime,
+          webUrl: metadata.webUrl,
+          note: metadata.folder
+            ? "This is a folder, not a file. Use list_onedrive_files with the parent path to browse its contents."
+            : `This file type (${mimeType}) cannot be read as text. Open it directly at the web URL above, or use Microsoft Graph to download it.`,
+        };
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+        };
+      } catch (err: any) {
+        return {
+          content: [{ type: "text" as const, text: `Error fetching OneDrive file: ${err.message}` }],
+        };
+      }
     }
   );
 
