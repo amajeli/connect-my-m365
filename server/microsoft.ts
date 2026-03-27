@@ -15,6 +15,7 @@ const SCOPES = [
   "Calendars.Read",
   "User.Read",
   "Files.Read",
+  "Chat.Read",
 ];
 
 function getRedirectUri(requestHost?: string): string {
@@ -44,8 +45,8 @@ export function getAuthUrl(state: string, requestHost?: string): string {
 
 export async function exchangeCodeForTokens(code: string, requestHost?: string) {
   const redirectUri = getRedirectUri(requestHost);
-  console.log("TOKEN EXCHANGE - redirect_uri:", redirectUri); // ADD THIS
-  console.log("TOKEN EXCHANGE - requestHost:", requestHost);  // ADD THIS
+  console.log("TOKEN EXCHANGE - redirect_uri:", redirectUri);
+  console.log("TOKEN EXCHANGE - requestHost:", requestHost);
   const params = new URLSearchParams({
     client_id: MICROSOFT_CLIENT_ID || "",
     client_secret: MICROSOFT_CLIENT_SECRET || "",
@@ -147,6 +148,32 @@ export async function getEmails(accessToken: string, top: number = 50) {
   return data.value || [];
 }
 
+export async function getCalendarEvents(accessToken: string) {
+  const now = new Date();
+  const startDate = new Date(now);
+  startDate.setDate(startDate.getDate() - 7);
+  const endDate = new Date(now);
+  endDate.setDate(endDate.getDate() + 30);
+
+  const response = await fetch(
+    `https://graph.microsoft.com/v1.0/me/calendarview?startDateTime=${startDate.toISOString()}&endDateTime=${endDate.toISOString()}&$select=id,subject,start,end,location,organizer,attendees,isAllDay,bodyPreview,body,showAs,importance,isOnlineMeeting,onlineMeetingUrl&$orderby=start/dateTime&$top=100`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Prefer: 'outlook.timezone="UTC"',
+      },
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Failed to fetch calendar: ${error}`);
+  }
+
+  const data = await response.json();
+  return data.value || [];
+}
+
 export async function listDriveItems(accessToken: string, path: string = "root", top: number = 50) {
   const endpoint = path === "root" || path === ""
     ? `https://graph.microsoft.com/v1.0/me/drive/root/children`
@@ -235,28 +262,68 @@ export async function getDriveItemContent(accessToken: string, itemId: string): 
   return { metadata, content: null, mimeType };
 }
 
-export async function getCalendarEvents(accessToken: string) {
-  const now = new Date();
-  const startDate = new Date(now);
-  startDate.setDate(startDate.getDate() - 7);
-  const endDate = new Date(now);
-  endDate.setDate(endDate.getDate() + 30);
-
+export async function getTeamsChats(accessToken: string, top: number = 20) {
   const response = await fetch(
-    `https://graph.microsoft.com/v1.0/me/calendarview?startDateTime=${startDate.toISOString()}&endDateTime=${endDate.toISOString()}&$select=id,subject,start,end,location,organizer,attendees,isAllDay,bodyPreview,body,showAs,importance,isOnlineMeeting,onlineMeetingUrl&$orderby=start/dateTime&$top=100`,
+    `https://graph.microsoft.com/v1.0/me/chats?$expand=members&$top=${top}`,
     {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        Prefer: 'outlook.timezone="UTC"',
-      },
+      headers: { Authorization: `Bearer ${accessToken}` },
     }
   );
 
   if (!response.ok) {
     const error = await response.text();
-    throw new Error(`Failed to fetch calendar: ${error}`);
+    throw new Error(`Failed to fetch Teams chats: ${error}`);
   }
 
   const data = await response.json();
   return data.value || [];
+}
+
+export async function getTeamsChatMessages(accessToken: string, chatId: string, top: number = 50) {
+  const response = await fetch(
+    `https://graph.microsoft.com/v1.0/me/chats/${encodeURIComponent(chatId)}/messages?$top=${top}&$orderby=createdDateTime desc`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Failed to fetch Teams chat messages: ${error}`);
+  }
+
+  const data = await response.json();
+  return data.value || [];
+}
+
+export async function searchTeamsMessages(accessToken: string, query: string, top: number = 25) {
+  const response = await fetch(
+    `https://graph.microsoft.com/v1.0/search/query`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        requests: [
+          {
+            entityTypes: ["chatMessage"],
+            query: { queryString: query },
+            from: 0,
+            size: top,
+          },
+        ],
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Failed to search Teams messages: ${error}`);
+  }
+
+  const data = await response.json();
+  const hits = data.value?.[0]?.hitsContainers?.[0]?.hits || [];
+  return hits;
 }

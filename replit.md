@@ -44,6 +44,9 @@ The app exposes an MCP server at `/mcp` that Claude.ai can connect to as a custo
 - `list_onedrive_files` - Browse files/folders in OneDrive at any path (account-scoped)
 - `search_onedrive_files` - Search OneDrive by filename/keyword
 - `get_onedrive_file_content` - Read text file content (≤512 KB) or get metadata + web link for other types
+- `list_teams_chats` - List recent Teams chats with participants (work accounts only)
+- `get_teams_chat_messages` - Read messages from a specific Teams chat by ID
+- `search_teams_messages` - Search across Teams chats by keyword
 
 ### MCP Authentication
 - **Primary: OAuth 2.0** - Claude.ai uses Dynamic Client Registration (RFC 7591) and OAuth authorization code flow
@@ -155,7 +158,7 @@ The app exposes an MCP server at `/mcp` that Claude.ai can connect to as a custo
 Azure AD app registration must have:
 - Supported account types: "Accounts in any organizational directory and personal Microsoft accounts"
 - Redirect URI: `https://<domain>/api/auth/callback`
-- API permissions: Mail.Read, Calendars.Read, User.Read, Files.Read, offline_access
+- API permissions: Mail.Read, Calendars.Read, User.Read, Files.Read, Chat.Read, offline_access
 
 ## Important Notes
 - Never create tables in the `stripe` schema — managed by stripe-replit-sync

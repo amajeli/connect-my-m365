@@ -12,6 +12,9 @@ import {
   listDriveItems,
   searchDriveItems,
   getDriveItemContent,
+  getTeamsChats,
+  getTeamsChatMessages,
+  searchTeamsMessages,
 } from "./microsoft";
 import type { User, OutlookEmail, OutlookCalendarEvent } from "@shared/schema";
 
@@ -560,6 +563,175 @@ function createMcpServer(user: User): McpServer {
       } catch (err: any) {
         return {
           content: [{ type: "text" as const, text: `Error fetching OneDrive file: ${err.message}` }],
+        };
+      }
+    }
+  );
+
+  server.tool(
+    "list_teams_chats",
+    "List recent Microsoft Teams chats for a connected work account. Returns each chat's ID, type (oneOnOne, group, meeting), topic, and participant names/emails. Use the chat ID with get_teams_chat_messages to read messages. Only available for work (Azure AD) accounts.",
+    {
+      account_email: z.string().describe("The email address of the work Microsoft account whose Teams chats to list"),
+      limit: z.number().min(1).max(50).default(20).describe("Maximum number of chats to return (default: 20, max: 50)"),
+    },
+    async ({ account_email, limit }) => {
+      const subError = checkSubscription(user);
+      if (subError) return { content: [{ type: "text" as const, text: subError }] };
+
+      const accounts = await storage.getAccountsByUserId(user.id);
+      const account = accounts.find((a) => a.email.toLowerCase() === account_email.toLowerCase());
+
+      if (!account) {
+        return {
+          content: [{ type: "text" as const, text: `No connected account found with email: ${account_email}` }],
+        };
+      }
+
+      try {
+        const accessToken = await getValidAccessToken(account.id);
+        const chats = await getTeamsChats(accessToken, limit);
+
+        if (chats.length === 0) {
+          return {
+            content: [{ type: "text" as const, text: "No Teams chats found. Note: Teams chats are only available for work (Azure AD) accounts." }],
+          };
+        }
+
+        const formatted = chats.map((chat: any) => ({
+          id: chat.id,
+          type: chat.chatType,
+          topic: chat.topic || null,
+          lastUpdated: chat.lastUpdatedDateTime,
+          members: (chat.members || []).map((m: any) => ({
+            displayName: m.displayName,
+            email: m.email || null,
+          })),
+        }));
+
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify(formatted, null, 2) }],
+        };
+      } catch (err: any) {
+        return {
+          content: [{ type: "text" as const, text: `Error listing Teams chats: ${err.message}` }],
+        };
+      }
+    }
+  );
+
+  server.tool(
+    "get_teams_chat_messages",
+    "Read messages from a specific Microsoft Teams chat. Returns message content, sender, timestamp, and any mentions. Use list_teams_chats first to get the chat ID. Only available for work (Azure AD) accounts.",
+    {
+      account_email: z.string().describe("The email address of the work Microsoft account"),
+      chat_id: z.string().describe("The ID of the Teams chat (obtained from list_teams_chats)"),
+      limit: z.number().min(1).max(50).default(25).describe("Maximum number of messages to return, newest first (default: 25, max: 50)"),
+    },
+    async ({ account_email, chat_id, limit }) => {
+      const subError = checkSubscription(user);
+      if (subError) return { content: [{ type: "text" as const, text: subError }] };
+
+      const accounts = await storage.getAccountsByUserId(user.id);
+      const account = accounts.find((a) => a.email.toLowerCase() === account_email.toLowerCase());
+
+      if (!account) {
+        return {
+          content: [{ type: "text" as const, text: `No connected account found with email: ${account_email}` }],
+        };
+      }
+
+      try {
+        const accessToken = await getValidAccessToken(account.id);
+        const messages = await getTeamsChatMessages(accessToken, chat_id, limit);
+
+        if (messages.length === 0) {
+          return {
+            content: [{ type: "text" as const, text: "No messages found in this chat." }],
+          };
+        }
+
+        const stripHtml = (html: string) =>
+          html ? html.replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim() : "";
+
+        const formatted = messages
+          .filter((m: any) => m.messageType === "message")
+          .map((m: any) => ({
+            id: m.id,
+            sender: m.from?.user
+              ? { name: m.from.user.displayName, email: m.from.user.userPrincipalName }
+              : { name: "Unknown", email: null },
+            sentAt: m.createdDateTime,
+            editedAt: m.lastModifiedDateTime !== m.createdDateTime ? m.lastModifiedDateTime : null,
+            body: m.body?.contentType === "html" ? stripHtml(m.body.content) : (m.body?.content || ""),
+            mentions: (m.mentions || []).map((mention: any) => mention.mentioned?.user?.displayName).filter(Boolean),
+            attachments: (m.attachments || []).map((a: any) => ({ name: a.name, contentType: a.contentType })),
+          }));
+
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify(formatted, null, 2) }],
+        };
+      } catch (err: any) {
+        return {
+          content: [{ type: "text" as const, text: `Error fetching Teams messages: ${err.message}` }],
+        };
+      }
+    }
+  );
+
+  server.tool(
+    "search_teams_messages",
+    "Search across Microsoft Teams chats by keyword. Returns matching messages with sender, timestamp, and a snippet of the message content. Only available for work (Azure AD) accounts.",
+    {
+      account_email: z.string().describe("The email address of the work Microsoft account whose Teams to search"),
+      query: z.string().describe("Search keyword to find in Teams messages"),
+      limit: z.number().min(1).max(25).default(15).describe("Maximum number of results to return (default: 15, max: 25)"),
+    },
+    async ({ account_email, query, limit }) => {
+      const subError = checkSubscription(user);
+      if (subError) return { content: [{ type: "text" as const, text: subError }] };
+
+      const accounts = await storage.getAccountsByUserId(user.id);
+      const account = accounts.find((a) => a.email.toLowerCase() === account_email.toLowerCase());
+
+      if (!account) {
+        return {
+          content: [{ type: "text" as const, text: `No connected account found with email: ${account_email}` }],
+        };
+      }
+
+      try {
+        const accessToken = await getValidAccessToken(account.id);
+        const hits = await searchTeamsMessages(accessToken, query, limit);
+
+        if (hits.length === 0) {
+          return {
+            content: [{ type: "text" as const, text: `No Teams messages found matching "${query}".` }],
+          };
+        }
+
+        const stripHtml = (html: string) =>
+          html ? html.replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim() : "";
+
+        const formatted = hits.map((hit: any) => {
+          const resource = hit.resource || {};
+          return {
+            chatId: resource.chatId || null,
+            messageId: resource.id || null,
+            sender: resource.from?.user
+              ? { name: resource.from.user.displayName, email: resource.from.user.userPrincipalName }
+              : { name: "Unknown", email: null },
+            sentAt: resource.createdDateTime,
+            summary: stripHtml(hit.summary || resource.body?.content || ""),
+          };
+        });
+
+        return {
+          content: [{ type: "text" as const, text: JSON.stringify(formatted, null, 2) }],
+        };
+      } catch (err: any) {
+        return {
+          content: [{ type: "text" as const, text: `Error searching Teams messages: ${err.message}` }],
         };
       }
     }
