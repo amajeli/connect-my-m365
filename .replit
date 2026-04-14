@@ -41,3 +41,8 @@ waitForPort = 5000
 
 [agent]
 integrations = ["stripe:2.0.0"]
+
+[userenv]
+
+[userenv.shared]
+ADMIN_EMAIL = "amanda@amandajelinek.com"
