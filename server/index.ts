@@ -78,7 +78,12 @@ export function log(message: string, source = "express") {
 }
 
 (async () => {
-  await initStripe();
+  const hasStripeConfig = process.env.STRIPE_SECRET_KEY || process.env.REPL_IDENTITY || process.env.WEB_REPL_RENEWAL;
+  if (hasStripeConfig) {
+    await initStripe();
+  } else {
+    console.warn('Stripe not initialized: set STRIPE_SECRET_KEY/STRIPE_PUBLISHABLE_KEY to enable.');
+  }
 
   app.post(
     '/api/stripe/webhook',
@@ -190,7 +195,7 @@ export function log(message: string, source = "express") {
     {
       port,
       host: "0.0.0.0",
-      reusePort: true,
+      ...(process.platform !== 'win32' && { reusePort: true }),
     },
     () => {
       log(`serving on port ${port}`);
