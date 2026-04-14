@@ -18,10 +18,37 @@ import {
 } from "./microsoft";
 import type { User, OutlookEmail, OutlookCalendarEvent } from "@shared/schema";
 
+const FREE_EMAIL_DAILY_LIMIT = 20;
+const freeEmailCounts = new Map<string, { date: string; count: number }>();
+
+function getFreeEmailsUsedToday(userId: string): number {
+  const today = new Date().toISOString().split("T")[0];
+  const entry = freeEmailCounts.get(userId);
+  if (!entry || entry.date !== today) return 0;
+  return entry.count;
+}
+
+function incrementFreeEmailCount(userId: string, amount: number) {
+  const today = new Date().toISOString().split("T")[0];
+  const current = getFreeEmailsUsedToday(userId);
+  freeEmailCounts.set(userId, { date: today, count: current + amount });
+}
+
+function isFullAccess(user: User): boolean {
+  return ["active", "trialing", "admin"].includes(user.subscriptionStatus || "");
+}
+
 function checkSubscription(user: User): string | null {
-  const activeStatuses = ["active", "trialing", "free"];
-  if (!activeStatuses.includes(user.subscriptionStatus || "")) {
-    return "Active subscription required to use Outlook Connector tools. Please visit the Outlook Connector web app to subscribe first.";
+  const anyAccess = ["active", "trialing", "admin", "free"];
+  if (!anyAccess.includes(user.subscriptionStatus || "")) {
+    return "Active subscription required to use Microsoft 365 Connector tools. Please visit the app to subscribe or start a free trial.";
+  }
+  return null;
+}
+
+function checkFullAccessRequired(user: User, toolName: string): string | null {
+  if (!isFullAccess(user)) {
+    return `The "${toolName}" tool requires a paid subscription. The Free tier only includes email access (up to ${FREE_EMAIL_DAILY_LIMIT} emails/day). Please upgrade at the Microsoft 365 Connector web app.`;
   }
   return null;
 }
@@ -93,6 +120,21 @@ function createMcpServer(user: User): McpServer {
       if (subError) {
         return { content: [{ type: "text" as const, text: subError }] };
       }
+
+      const isFree = !isFullAccess(user);
+      if (isFree) {
+        const usedToday = getFreeEmailsUsedToday(user.id);
+        if (usedToday >= FREE_EMAIL_DAILY_LIMIT) {
+          return {
+            content: [{
+              type: "text" as const,
+              text: `Daily email limit reached. Free tier allows ${FREE_EMAIL_DAILY_LIMIT} emails per day. ${usedToday} fetched today. Resets at midnight UTC. Upgrade to a paid subscription for unlimited access.`,
+            }],
+          };
+        }
+        limit = Math.min(limit, FREE_EMAIL_DAILY_LIMIT - usedToday);
+      }
+
       const accounts = await storage.getAccountsByUserId(user.id);
       if (accounts.length === 0) {
         return {
@@ -132,6 +174,9 @@ function createMcpServer(user: User): McpServer {
       );
 
       const limited = allEmails.slice(0, limit);
+      if (isFree && limited.length > 0) {
+        incrementFreeEmailCount(user.id, limited.length);
+      }
 
       const formatted = limited.map((e) => ({
         subject: e.subject,
@@ -161,9 +206,10 @@ function createMcpServer(user: User): McpServer {
     },
     async ({ query, account_email, limit }) => {
       const subError = checkSubscription(user);
-      if (subError) {
-        return { content: [{ type: "text" as const, text: subError }] };
-      }
+      if (subError) return { content: [{ type: "text" as const, text: subError }] };
+      const fullErr = checkFullAccessRequired(user, "search_emails");
+      if (fullErr) return { content: [{ type: "text" as const, text: fullErr }] };
+
       const accounts = await storage.getAccountsByUserId(user.id);
       if (accounts.length === 0) {
         return {
@@ -241,9 +287,10 @@ function createMcpServer(user: User): McpServer {
     },
     async ({ email_id, account_email }) => {
       const subError = checkSubscription(user);
-      if (subError) {
-        return { content: [{ type: "text" as const, text: subError }] };
-      }
+      if (subError) return { content: [{ type: "text" as const, text: subError }] };
+      const fullErr = checkFullAccessRequired(user, "get_email_detail");
+      if (fullErr) return { content: [{ type: "text" as const, text: fullErr }] };
+
       const accounts = await storage.getAccountsByUserId(user.id);
       const account = accounts.find(
         (a) => a.email.toLowerCase() === account_email.toLowerCase()
@@ -309,9 +356,10 @@ function createMcpServer(user: User): McpServer {
     },
     async ({ account_email, days_ahead, days_behind }) => {
       const subError = checkSubscription(user);
-      if (subError) {
-        return { content: [{ type: "text" as const, text: subError }] };
-      }
+      if (subError) return { content: [{ type: "text" as const, text: subError }] };
+      const fullErr = checkFullAccessRequired(user, "get_calendar_events");
+      if (fullErr) return { content: [{ type: "text" as const, text: fullErr }] };
+
       const accounts = await storage.getAccountsByUserId(user.id);
       if (accounts.length === 0) {
         return {
@@ -413,6 +461,8 @@ function createMcpServer(user: User): McpServer {
     async ({ account_email, folder_path, limit }) => {
       const subError = checkSubscription(user);
       if (subError) return { content: [{ type: "text" as const, text: subError }] };
+      const fullErr = checkFullAccessRequired(user, "list_onedrive_files");
+      if (fullErr) return { content: [{ type: "text" as const, text: fullErr }] };
 
       const accounts = await storage.getAccountsByUserId(user.id);
       const account = accounts.find((a) => a.email.toLowerCase() === account_email.toLowerCase());
@@ -467,6 +517,8 @@ function createMcpServer(user: User): McpServer {
     async ({ account_email, query, limit }) => {
       const subError = checkSubscription(user);
       if (subError) return { content: [{ type: "text" as const, text: subError }] };
+      const fullErr = checkFullAccessRequired(user, "search_onedrive_files");
+      if (fullErr) return { content: [{ type: "text" as const, text: fullErr }] };
 
       const accounts = await storage.getAccountsByUserId(user.id);
       const account = accounts.find((a) => a.email.toLowerCase() === account_email.toLowerCase());
@@ -519,6 +571,8 @@ function createMcpServer(user: User): McpServer {
     async ({ account_email, item_id }) => {
       const subError = checkSubscription(user);
       if (subError) return { content: [{ type: "text" as const, text: subError }] };
+      const fullErr = checkFullAccessRequired(user, "get_onedrive_file_content");
+      if (fullErr) return { content: [{ type: "text" as const, text: fullErr }] };
 
       const accounts = await storage.getAccountsByUserId(user.id);
       const account = accounts.find((a) => a.email.toLowerCase() === account_email.toLowerCase());
@@ -578,6 +632,8 @@ function createMcpServer(user: User): McpServer {
     async ({ account_email, limit }) => {
       const subError = checkSubscription(user);
       if (subError) return { content: [{ type: "text" as const, text: subError }] };
+      const fullErr = checkFullAccessRequired(user, "list_teams_chats");
+      if (fullErr) return { content: [{ type: "text" as const, text: fullErr }] };
 
       const accounts = await storage.getAccountsByUserId(user.id);
       const account = accounts.find((a) => a.email.toLowerCase() === account_email.toLowerCase());
@@ -631,6 +687,8 @@ function createMcpServer(user: User): McpServer {
     async ({ account_email, chat_id, limit }) => {
       const subError = checkSubscription(user);
       if (subError) return { content: [{ type: "text" as const, text: subError }] };
+      const fullErr = checkFullAccessRequired(user, "get_teams_chat_messages");
+      if (fullErr) return { content: [{ type: "text" as const, text: fullErr }] };
 
       const accounts = await storage.getAccountsByUserId(user.id);
       const account = accounts.find((a) => a.email.toLowerCase() === account_email.toLowerCase());
@@ -690,6 +748,8 @@ function createMcpServer(user: User): McpServer {
     async ({ account_email, query, limit }) => {
       const subError = checkSubscription(user);
       if (subError) return { content: [{ type: "text" as const, text: subError }] };
+      const fullErr = checkFullAccessRequired(user, "search_teams_messages");
+      if (fullErr) return { content: [{ type: "text" as const, text: fullErr }] };
 
       const accounts = await storage.getAccountsByUserId(user.id);
       const account = accounts.find((a) => a.email.toLowerCase() === account_email.toLowerCase());

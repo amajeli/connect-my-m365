@@ -18,12 +18,19 @@ A multi-user SaaS web application that connects to Microsoft 365 (work and perso
 - View inbox emails with search and account filtering
 - View calendar events with weekly navigation
 - Copy formatted email/calendar data to clipboard for Claude.ai
-- **MCP custom connector** - Claude.ai can directly access user's Outlook data via MCP protocol
+- **MCP custom connector** - Claude.ai can directly access user's Microsoft 365 data via MCP protocol
 - **Per-user MCP API keys** for secure, isolated connector access
-- **Stripe subscription** required for MCP connector access
+- **Tiered subscription** model for MCP connector access
 - Token auto-refresh for uninterrupted access
 - Dark/light theme toggle
 - Landing page with pricing
+
+## Subscription Tiers
+- **trialing**: 10-day trial started at Stripe checkout, full access to all MCP tools
+- **active**: Paid subscriber, full access to all MCP tools
+- **admin**: Internal/owner tier, full access, no expiry; granted via `POST /api/subscription/admin`; only eligible if user email is in ADMIN_EMAIL env var
+- **free**: Post-trial fallback, email-only access (list_accounts + get_recent_emails), 20 emails/day cap (in-memory counter, resets midnight UTC)
+- **none**: No access to MCP tools; must subscribe or activate free tier
 
 ## Auth Flow
 1. User visits landing page (unauthenticated)
@@ -93,8 +100,10 @@ The app exposes an MCP server at `/mcp` that Claude.ai can connect to as a custo
 - mcpApiKey (text, UUID) - per-user MCP bearer token
 - stripeCustomerId (text, nullable)
 - stripeSubscriptionId (text, nullable)
-- subscriptionStatus (text, default "none")
+- subscriptionStatus (text, default "none") — "none" | "trialing" | "active" | "free" | "admin" | "past_due" | "canceled"
 - createdAt (timestamp)
+
+> UserInfo (returned by /api/auth/me) also includes: isAdmin (bool)
 
 ### connected_accounts table
 - id (varchar, PK, UUID)

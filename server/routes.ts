@@ -35,6 +35,8 @@ export async function registerRoutes(
         req.session.destroy(() => {});
         return res.json({ user: null });
       }
+      const adminEmails = (process.env.ADMIN_EMAIL || "").split(",").map(e => e.trim().toLowerCase()).filter(Boolean);
+      const isAdmin = adminEmails.includes(user.email.toLowerCase());
       res.json({
         user: {
           id: user.id,
@@ -43,6 +45,7 @@ export async function registerRoutes(
           subscriptionStatus: user.subscriptionStatus,
           stripeCustomerId: user.stripeCustomerId,
           stripeSubscriptionId: user.stripeSubscriptionId,
+          isAdmin,
         },
       });
     } catch (err: any) {
@@ -355,7 +358,7 @@ export async function registerRoutes(
         line_items: [{ price: priceId, quantity: 1 }],
         mode: 'subscription',
         subscription_data: {
-          trial_period_days: 5,
+          trial_period_days: 10,
         },
         success_url: `${req.protocol}://${req.get('host')}/billing?success=true`,
         cancel_url: `${req.protocol}://${req.get('host')}/billing?canceled=true`,
@@ -423,7 +426,8 @@ export async function registerRoutes(
         });
         res.json({ status: sub.status });
       } else {
-        const keepStatus = user.subscriptionStatus === "free" ? "free" : "none";
+        const preservedStatuses = ["free", "admin"];
+        const keepStatus = preservedStatuses.includes(user.subscriptionStatus || "") ? user.subscriptionStatus! : "none";
         await storage.updateUser(user.id, {
           stripeSubscriptionId: null,
           subscriptionStatus: keepStatus,
@@ -439,13 +443,30 @@ export async function registerRoutes(
     try {
       const user = await storage.getUser(req.session.userId!);
       if (!user) return res.status(404).json({ message: "User not found" });
-      if (user.subscriptionStatus === "active" || user.subscriptionStatus === "trialing") {
-        return res.json({ status: user.subscriptionStatus, message: "Already has a paid subscription" });
+      if (user.subscriptionStatus === "active" || user.subscriptionStatus === "trialing" || user.subscriptionStatus === "admin") {
+        return res.json({ status: user.subscriptionStatus, message: "Already has active access" });
       }
       await storage.updateUser(user.id, {
         subscriptionStatus: "free",
       });
       res.json({ status: "free" });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/subscription/admin", requireAuth, async (req, res) => {
+    try {
+      const user = await storage.getUser(req.session.userId!);
+      if (!user) return res.status(404).json({ message: "User not found" });
+      const adminEmails = (process.env.ADMIN_EMAIL || "").split(",").map(e => e.trim().toLowerCase()).filter(Boolean);
+      if (!adminEmails.includes(user.email.toLowerCase())) {
+        return res.status(403).json({ message: "Forbidden: Admin access only" });
+      }
+      await storage.updateUser(user.id, {
+        subscriptionStatus: "admin",
+      });
+      res.json({ status: "admin" });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }

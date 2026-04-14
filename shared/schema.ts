@@ -136,6 +136,7 @@ export type UserInfo = {
   subscriptionStatus: string;
   stripeCustomerId: string | null;
   stripeSubscriptionId: string | null;
+  isAdmin: boolean;
 };
 
 export const oauthClients = pgTable("oauth_clients", {

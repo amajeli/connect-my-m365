@@ -48,7 +48,8 @@ export default function BillingPage() {
 
   const isSubscribed = user?.subscriptionStatus === "active" || user?.subscriptionStatus === "trialing";
   const isFree = user?.subscriptionStatus === "free";
-  const hasAccess = isSubscribed || isFree;
+  const isAdminTier = user?.subscriptionStatus === "admin";
+  const hasAccess = isSubscribed || isFree || isAdminTier;
 
   const handleCheckout = async (priceId: string) => {
     try {
@@ -66,7 +67,17 @@ export default function BillingPage() {
     try {
       await apiRequest("POST", "/api/subscription/free");
       queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
-      toast({ title: "Free tier activated", description: "Your MCP connector is now ready to use for testing." });
+      toast({ title: "Free tier activated", description: "Email access active — up to 20 emails/day via MCP." });
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    }
+  };
+
+  const handleActivateAdmin = async () => {
+    try {
+      await apiRequest("POST", "/api/subscription/admin");
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      toast({ title: "Admin tier activated", description: "Full access enabled with no expiry." });
     } catch (err: any) {
       toast({ title: "Error", description: err.message, variant: "destructive" });
     }
@@ -121,14 +132,20 @@ export default function BillingPage() {
           <CreditCard className="w-5 h-5 text-muted-foreground" />
           <h2 className="font-medium">Subscription</h2>
           <Badge variant={hasAccess ? "default" : "secondary"}>
-            {isSubscribed ? "Active" : isFree ? "Free" : user.subscriptionStatus === "past_due" ? "Past Due" : "Inactive"}
+            {isAdminTier ? "Admin" : isSubscribed ? "Active" : isFree ? "Free" : user.subscriptionStatus === "past_due" ? "Past Due" : "Inactive"}
           </Badge>
         </div>
 
-        {isSubscribed ? (
+        {isAdminTier ? (
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              Your MCP connector is active. Claude.ai can access your Microsoft 365 data.
+              You have <strong>Admin access</strong> — full functionality with no expiry. All MCP tools are available.
+            </p>
+          </div>
+        ) : isSubscribed ? (
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Your MCP connector is active. Claude.ai can access your full Microsoft 365 data.
             </p>
             <Button variant="outline" onClick={handleManageBilling} className="gap-2" data-testid="button-manage-billing">
               <ExternalLink className="w-4 h-4" />
@@ -138,7 +155,7 @@ export default function BillingPage() {
         ) : isFree ? (
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              You're on the Free testing tier. MCP connector is active for testing purposes.
+              You're on the <strong>Free tier</strong> — email access only, up to 20 emails per day. Calendar, OneDrive, and Teams require a paid subscription.
             </p>
             <div className="flex gap-3 flex-wrap">
               {monthlyPrice && (
@@ -148,7 +165,17 @@ export default function BillingPage() {
                   data-testid="button-upgrade-monthly"
                 >
                   <Zap className="w-4 h-4" />
-                  Upgrade to ${(monthlyPrice.unit_amount / 100).toFixed(2)}/month
+                  Upgrade — ${(monthlyPrice.unit_amount / 100).toFixed(2)}/month
+                </Button>
+              )}
+              {yearlyPrice && (
+                <Button
+                  variant="outline"
+                  onClick={() => handleCheckout(yearlyPrice.id)}
+                  className="gap-2"
+                  data-testid="button-upgrade-yearly"
+                >
+                  ${(yearlyPrice.unit_amount / 100).toFixed(2)}/year (save ~33%)
                 </Button>
               )}
             </div>
@@ -156,17 +183,9 @@ export default function BillingPage() {
         ) : (
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              Start your free 5-day trial to activate the MCP connector and connect Claude.ai to your Outlook. No charge during the trial period.
+              Start a free 10-day trial for full access to email, calendar, OneDrive, and Teams. No charge during the trial.
             </p>
             <div className="flex gap-3 flex-wrap">
-              <Button
-                variant="outline"
-                onClick={handleActivateFree}
-                className="gap-2"
-                data-testid="button-activate-free"
-              >
-                Activate Free Tier
-              </Button>
               {monthlyPrice && (
                 <Button
                   onClick={() => handleCheckout(monthlyPrice.id)}
@@ -174,7 +193,7 @@ export default function BillingPage() {
                   data-testid="button-subscribe-monthly"
                 >
                   <Zap className="w-4 h-4" />
-                  ${(monthlyPrice.unit_amount / 100).toFixed(2)}/month
+                  Start 10-Day Trial — ${(monthlyPrice.unit_amount / 100).toFixed(2)}/month after
                 </Button>
               )}
               {yearlyPrice && (
@@ -184,10 +203,47 @@ export default function BillingPage() {
                   className="gap-2"
                   data-testid="button-subscribe-yearly"
                 >
-                  ${(yearlyPrice.unit_amount / 100).toFixed(2)}/year
+                  ${(yearlyPrice.unit_amount / 100).toFixed(2)}/year (save ~33%)
                 </Button>
               )}
+              <Button
+                variant="ghost"
+                onClick={handleActivateFree}
+                className="gap-2 text-muted-foreground"
+                data-testid="button-activate-free"
+              >
+                Continue with Free tier (email only, 20/day)
+              </Button>
             </div>
+            {user?.isAdmin && (
+              <div className="pt-2 border-t">
+                <p className="text-xs text-muted-foreground mb-2">Admin</p>
+                <Button
+                  variant="outline"
+                  onClick={handleActivateAdmin}
+                  className="gap-2"
+                  data-testid="button-activate-admin"
+                >
+                  <Zap className="w-4 h-4" />
+                  Activate Admin Tier
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+        {(isFree || isSubscribed) && user?.isAdmin && !isAdminTier && (
+          <div className="mt-4 pt-3 border-t">
+            <p className="text-xs text-muted-foreground mb-2">Admin</p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleActivateAdmin}
+              className="gap-2"
+              data-testid="button-activate-admin-existing"
+            >
+              <Zap className="w-4 h-4" />
+              Switch to Admin Tier
+            </Button>
           </div>
         )}
       </Card>
