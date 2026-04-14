@@ -6,11 +6,14 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import {
   Mail,
   Calendar,
+  HardDrive,
+  MessageSquare,
   Zap,
   Shield,
   Check,
   ArrowRight,
   LogIn,
+  LayoutGrid,
 } from "lucide-react";
 
 export default function LandingPage() {
@@ -26,8 +29,8 @@ export default function LandingPage() {
     <div className="min-h-screen bg-background">
       <header className="flex items-center justify-between gap-2 p-4 md:px-8 border-b sticky top-0 z-50 bg-background">
         <div className="flex items-center gap-2">
-          <Mail className="w-5 h-5 text-[#0078D4]" />
-          <span className="font-semibold text-sm">Outlook Connector</span>
+          <LayoutGrid className="w-5 h-5 text-[#0078D4]" />
+          <span className="font-semibold text-sm">Microsoft 365 Connector</span>
         </div>
         <div className="flex items-center gap-2">
           <ThemeToggle />
@@ -43,11 +46,11 @@ export default function LandingPage() {
       <section className="py-16 md:py-24 px-4 md:px-8 max-w-4xl mx-auto text-center">
         <Badge variant="secondary" className="mb-4">MCP Custom Connector</Badge>
         <h1 className="text-3xl md:text-5xl font-bold tracking-tight mb-4">
-          Your Outlook in Claude.ai
+          Your Microsoft 365 in Claude.ai
         </h1>
         <p className="text-lg text-muted-foreground max-w-2xl mx-auto mb-8">
-          Connect your Microsoft Outlook email and calendar directly to Claude.
-          Read, search, and summarize emails and events in natural language.
+          Connect your Microsoft email, calendar, OneDrive, and Teams directly to Claude.
+          Read, search, and summarize your work data in natural language.
         </p>
         <a href="/api/auth/microsoft" data-testid="button-hero-cta">
           <Button size="lg" className="gap-2">
@@ -58,26 +61,33 @@ export default function LandingPage() {
       </section>
 
       <section className="py-12 px-4 md:px-8 max-w-5xl mx-auto">
-        <div className="grid md:grid-cols-3 gap-4">
+        <div className="grid sm:grid-cols-2 md:grid-cols-4 gap-4">
           <Card className="p-6">
             <Mail className="w-8 h-8 text-[#0078D4] mb-3" />
-            <h3 className="font-semibold mb-1">Email Access</h3>
+            <h3 className="font-semibold mb-1">Email</h3>
             <p className="text-sm text-muted-foreground">
               Read, search, and summarize your inbox directly from Claude conversations.
             </p>
           </Card>
           <Card className="p-6">
             <Calendar className="w-8 h-8 text-[#0078D4] mb-3" />
-            <h3 className="font-semibold mb-1">Calendar Events</h3>
+            <h3 className="font-semibold mb-1">Calendar</h3>
             <p className="text-sm text-muted-foreground">
               View upcoming meetings, check availability, and get event details.
             </p>
           </Card>
           <Card className="p-6">
-            <Zap className="w-8 h-8 text-[#0078D4] mb-3" />
-            <h3 className="font-semibold mb-1">MCP Protocol</h3>
+            <HardDrive className="w-8 h-8 text-[#0078D4] mb-3" />
+            <h3 className="font-semibold mb-1">OneDrive</h3>
             <p className="text-sm text-muted-foreground">
-              Native Claude.ai integration through Model Context Protocol custom connectors.
+              Browse, search, and read your OneDrive files across personal and work accounts.
+            </p>
+          </Card>
+          <Card className="p-6">
+            <MessageSquare className="w-8 h-8 text-[#0078D4] mb-3" />
+            <h3 className="font-semibold mb-1">Teams</h3>
+            <p className="text-sm text-muted-foreground">
+              Search and read your Teams chat conversations from work accounts.
             </p>
           </Card>
         </div>
@@ -92,7 +102,7 @@ export default function LandingPage() {
         <Card className="p-6 md:p-8 max-w-md mx-auto">
           <h3 className="text-xl font-bold mb-1">{product?.name || "Pro Plan"}</h3>
           <p className="text-sm text-muted-foreground mb-4">
-            {product?.description || "Full access to Outlook email and calendar in Claude.ai"}
+            {product?.description || "Full access to Microsoft 365 in Claude.ai"}
           </p>
 
           <div className="flex items-baseline gap-1 mb-1">
@@ -109,12 +119,12 @@ export default function LandingPage() {
 
           <ul className="space-y-2 mb-6">
             {[
-              "Connect multiple Outlook accounts",
+              "Connect multiple Microsoft accounts (work + personal)",
               "Email inbox access via Claude.ai",
               "Calendar events in Claude conversations",
-              "Search and filter emails",
+              "OneDrive file browsing and search",
+              "Teams chat reading (work accounts)",
               "Personal MCP API key",
-              "Work + personal accounts",
             ].map((feature) => (
               <li key={feature} className="flex items-center gap-2 text-sm">
                 <Check className="w-4 h-4 text-green-600 dark:text-green-400 shrink-0" />
@@ -142,7 +152,7 @@ export default function LandingPage() {
             {
               step: "1",
               title: "Sign in with Microsoft",
-              desc: "Use your work or personal Microsoft account to sign in and connect your Outlook.",
+              desc: "Use your work or personal Microsoft account. Connect multiple accounts to access both work and personal data.",
             },
             {
               step: "2",
@@ -152,12 +162,12 @@ export default function LandingPage() {
             {
               step: "3",
               title: "Add to Claude.ai",
-              desc: "Copy your personal MCP API key and add the connector URL in Claude.ai settings.",
+              desc: "Paste your MCP Server URL in Claude.ai Settings → Connectors. OAuth handles authentication automatically.",
             },
             {
               step: "4",
               title: "Start chatting",
-              desc: "Ask Claude about your emails, calendar events, and more — all in natural language.",
+              desc: "Ask Claude about your emails, meetings, files, and Teams chats — all in natural language.",
             },
           ].map(({ step, title, desc }) => (
             <div key={step} className="flex gap-4">
@@ -181,17 +191,18 @@ export default function LandingPage() {
               <h3 className="font-semibold mb-1">Security & Privacy</h3>
               <p className="text-sm text-muted-foreground">
                 We use Microsoft OAuth2 with read-only permissions. We never store your email
-                content — data is fetched live from Microsoft Graph API. Your access tokens
-                are encrypted and only used to make API calls on your behalf. Each user gets
-                a unique MCP API key for isolated, secure access.
+                content or file data — everything is fetched live from Microsoft Graph API.
+                Your access tokens are encrypted and only used to make API calls on your behalf.
+                Each user gets a unique MCP API key for isolated, secure access.
               </p>
             </div>
           </div>
         </Card>
       </section>
 
-      <footer className="border-t py-6 px-4 text-center text-xs text-muted-foreground">
-        Outlook Connector for Claude.ai
+      <footer className="border-t py-6 px-4 text-center text-xs text-muted-foreground space-y-1">
+        <p>Microsoft 365 Connector for Claude.ai</p>
+        <p>Not affiliated with or endorsed by Microsoft Corporation. Microsoft, Microsoft 365, Outlook, OneDrive, and Teams are trademarks of Microsoft Corporation.</p>
       </footer>
     </div>
   );

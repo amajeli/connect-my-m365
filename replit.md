@@ -1,7 +1,7 @@
-# Outlook Connector for Claude.ai
+# Microsoft 365 Connector for Claude.ai
 
 ## Overview
-A multi-user SaaS web application that connects to Microsoft Outlook (both work and personal accounts) via Microsoft Graph API, pulling emails and calendar events. Functions as a **custom MCP connector** for Claude.ai with per-user subscription monetization via Stripe.
+A multi-user SaaS web application that connects to Microsoft 365 (work and personal accounts) via Microsoft Graph API, pulling emails, calendar events, OneDrive files, and Teams chats. Functions as a **custom MCP connector** for Claude.ai with per-user subscription monetization via Stripe. Not affiliated with or endorsed by Microsoft Corporation.
 
 ## Architecture
 - **Frontend**: React + Vite + Tailwind CSS + shadcn/ui components

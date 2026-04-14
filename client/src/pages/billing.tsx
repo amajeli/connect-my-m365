@@ -128,7 +128,7 @@ export default function BillingPage() {
         {isSubscribed ? (
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              Your MCP connector is active. Claude.ai can access your Outlook data.
+              Your MCP connector is active. Claude.ai can access your Microsoft 365 data.
             </p>
             <Button variant="outline" onClick={handleManageBilling} className="gap-2" data-testid="button-manage-billing">
               <ExternalLink className="w-4 h-4" />

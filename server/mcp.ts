@@ -28,7 +28,7 @@ function checkSubscription(user: User): string | null {
 
 function createMcpServer(user: User): McpServer {
   const server = new McpServer({
-    name: "outlook-connector",
+    name: "microsoft365-connector",
     version: "1.0.0",
   });
 

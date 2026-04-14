@@ -1,4 +1,4 @@
-import { Mail, Calendar, Settings, CreditCard, Plus, LogOut } from "lucide-react";
+import { Mail, Calendar, Settings, CreditCard, Plus, LogOut, LayoutGrid } from "lucide-react";
 import { useLocation, Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
@@ -64,9 +64,9 @@ export function AppSidebar() {
     <Sidebar>
       <SidebarHeader className="p-4">
         <div className="flex items-center gap-2">
-          <Mail className="w-6 h-6 text-[#0078D4]" />
+          <LayoutGrid className="w-6 h-6 text-[#0078D4]" />
           <div>
-            <h2 className="text-sm font-semibold">Outlook Connector</h2>
+            <h2 className="text-sm font-semibold">Microsoft 365 Connector</h2>
             <p className="text-xs text-muted-foreground">for Claude.ai</p>
           </div>
         </div>
