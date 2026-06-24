@@ -64,7 +64,10 @@ export async function registerRoutes(
     }
     const requestHost = req.get('host');
     const authUrl = getAuthUrl(state, requestHost);
-    res.redirect(authUrl);
+    req.session.save((err) => {
+      if (err) console.error("Session save error before OAuth redirect:", err);
+      res.redirect(authUrl);
+    });
   });
 
   app.get("/api/auth/callback", async (req, res) => {

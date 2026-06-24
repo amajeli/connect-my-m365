@@ -121,7 +121,10 @@ export function registerOAuthRoutes(app: Express): void {
           code_challenge,
           code_challenge_method,
         };
-        return res.redirect("/api/auth/microsoft");
+        return req.session.save((err) => {
+          if (err) console.error("Session save error before OAuth redirect:", err);
+          res.redirect("/api/auth/microsoft");
+        });
       }
 
       const code = crypto.randomBytes(32).toString("hex");
