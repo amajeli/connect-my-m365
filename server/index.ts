@@ -156,7 +156,11 @@ export function log(message: string, source = "express") {
       if (path.startsWith("/api") || path.startsWith("/oauth") || path.startsWith("/mcp") || path.startsWith("/.well-known")) {
         let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
         if (capturedJsonResponse) {
-          logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
+          const SENSITIVE_KEYS = ["access_token", "refresh_token", "client_secret", "accessToken", "refreshToken", "clientSecret", "code"];
+          const redacted = JSON.stringify(capturedJsonResponse, (key, value) =>
+            SENSITIVE_KEYS.includes(key) ? "[REDACTED]" : value
+          );
+          logLine += ` :: ${redacted}`;
         }
 
         log(logLine);
