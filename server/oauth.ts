@@ -96,11 +96,14 @@ export function registerOAuthRoutes(app: Express): void {
         });
       }
 
-      const client = await storage.getOAuthClient(client_id);
+      let client = await storage.getOAuthClient(client_id);
       if (!client) {
-        return res.status(400).json({
-          error: "invalid_client",
-          error_description: "Unknown client_id",
+        console.log(`OAuth authorize: auto-provisioning previously-issued client_id ${client_id} (not found in this database)`);
+        client = await storage.createOAuthClient({
+          clientId: client_id,
+          clientSecret: "",
+          clientName: null,
+          redirectUris: [redirect_uri],
         });
       }
 
@@ -169,7 +172,15 @@ export function registerOAuthRoutes(app: Express): void {
         }
 
         const client = await storage.getOAuthClient(client_id);
-        if (!client || client.clientSecret !== client_secret) {
+        if (!client) {
+          return res.status(401).json({
+            error: "invalid_client",
+            error_description: "Invalid client credentials",
+          });
+        }
+        if (client.clientSecret === "") {
+          await storage.updateOAuthClientSecret(client_id, client_secret);
+        } else if (client.clientSecret !== client_secret) {
           return res.status(401).json({
             error: "invalid_client",
             error_description: "Invalid client credentials",
@@ -267,7 +278,15 @@ export function registerOAuthRoutes(app: Express): void {
         }
 
         const client = await storage.getOAuthClient(client_id);
-        if (!client || client.clientSecret !== client_secret) {
+        if (!client) {
+          return res.status(401).json({
+            error: "invalid_client",
+            error_description: "Invalid client credentials",
+          });
+        }
+        if (client.clientSecret === "") {
+          await storage.updateOAuthClientSecret(client_id, client_secret);
+        } else if (client.clientSecret !== client_secret) {
           return res.status(401).json({
             error: "invalid_client",
             error_description: "Invalid client credentials",

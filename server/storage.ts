@@ -26,6 +26,7 @@ export interface IStorage {
 
   createOAuthClient(data: { clientId: string; clientSecret: string; clientName?: string; redirectUris: string[] }): Promise<any>;
   getOAuthClient(clientId: string): Promise<any | undefined>;
+  updateOAuthClientSecret(clientId: string, clientSecret: string): Promise<void>;
   createOAuthCode(data: { code: string; clientId: string; userId: string; redirectUri: string; scope?: string; expiresAt: Date; codeChallenge?: string; codeChallengeMethod?: string }): Promise<any>;
   getOAuthCode(code: string): Promise<any | undefined>;
   markOAuthCodeUsed(code: string): Promise<void>;
@@ -161,6 +162,10 @@ export class DatabaseStorage implements IStorage {
   async getOAuthClient(clientId: string): Promise<any | undefined> {
     const [client] = await db.select().from(oauthClients).where(eq(oauthClients.clientId, clientId));
     return client;
+  }
+
+  async updateOAuthClientSecret(clientId: string, clientSecret: string): Promise<void> {
+    await db.update(oauthClients).set({ clientSecret }).where(eq(oauthClients.clientId, clientId));
   }
 
   async createOAuthCode(data: { code: string; clientId: string; userId: string; redirectUri: string; scope?: string; expiresAt: Date; codeChallenge?: string; codeChallengeMethod?: string }): Promise<any> {
