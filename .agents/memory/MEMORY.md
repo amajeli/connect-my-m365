@@ -1,1 +1,2 @@
 - [Claude.ai MCP connector debugging](claude-mcp-connector.md) — checklist for "won't connect in Claude": deployment privacy, dev/prod DB split, stale DCR client cache, tier activation.
+- [MCP tool response token efficiency](mcp-token-efficiency.md) — compact JSON, cap body/file fields, fetch only needed upstream fields; standing user requirement to minimize token burn.

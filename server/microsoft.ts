@@ -131,9 +131,12 @@ export async function getUserProfile(accessToken: string) {
   return await response.json();
 }
 
-export async function getEmails(accessToken: string, top: number = 50) {
+export async function getEmails(accessToken: string, top: number = 50, includeBody: boolean = true) {
+  const fields = includeBody
+    ? "id,subject,from,toRecipients,receivedDateTime,bodyPreview,body,isRead,hasAttachments,importance,conversationId,parentFolderId"
+    : "id,subject,from,toRecipients,receivedDateTime,bodyPreview,isRead,hasAttachments,importance";
   const response = await fetch(
-    `https://graph.microsoft.com/v1.0/me/mailfolders/inbox/messages?$select=id,subject,from,toRecipients,receivedDateTime,bodyPreview,body,isRead,hasAttachments,importance,conversationId,parentFolderId&$top=${top}&$orderby=receivedDateTime DESC`,
+    `https://graph.microsoft.com/v1.0/me/mailfolders/inbox/messages?$select=${fields}&$top=${top}&$orderby=receivedDateTime DESC`,
     {
       headers: { Authorization: `Bearer ${accessToken}` },
     }
@@ -156,7 +159,7 @@ export async function getCalendarEvents(accessToken: string) {
   endDate.setDate(endDate.getDate() + 30);
 
   const response = await fetch(
-    `https://graph.microsoft.com/v1.0/me/calendarview?startDateTime=${startDate.toISOString()}&endDateTime=${endDate.toISOString()}&$select=id,subject,start,end,location,organizer,attendees,isAllDay,bodyPreview,body,showAs,importance,isOnlineMeeting,onlineMeetingUrl&$orderby=start/dateTime&$top=100`,
+    `https://graph.microsoft.com/v1.0/me/calendarview?startDateTime=${startDate.toISOString()}&endDateTime=${endDate.toISOString()}&$select=id,subject,start,end,location,organizer,attendees,isAllDay,bodyPreview,showAs,importance,isOnlineMeeting,onlineMeetingUrl&$orderby=start/dateTime&$top=100`,
     {
       headers: {
         Authorization: `Bearer ${accessToken}`,

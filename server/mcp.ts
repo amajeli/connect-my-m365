@@ -21,6 +21,15 @@ import type { User, OutlookEmail, OutlookCalendarEvent } from "@shared/schema";
 const FREE_EMAIL_DAILY_LIMIT = 20;
 const freeEmailCounts = new Map<string, { date: string; count: number }>();
 
+const MAX_BODY_CHARS = 5000;
+const MAX_FILE_CHARS = 16000;
+
+function truncate(text: string | null | undefined, max: number): string {
+  if (!text) return text ?? "";
+  if (text.length <= max) return text;
+  return text.slice(0, max) + `\n…[truncated ${text.length - max} more characters]`;
+}
+
 function getFreeEmailsUsedToday(userId: string): number {
   const today = new Date().toISOString().split("T")[0];
   const entry = freeEmailCounts.get(userId);
@@ -91,7 +100,7 @@ function createMcpServer(user: User): McpServer {
         content: [
           {
             type: "text" as const,
-            text: JSON.stringify(accountList, null, 2),
+            text: JSON.stringify(accountList),
           },
         ],
       };
@@ -157,7 +166,7 @@ function createMcpServer(user: User): McpServer {
       for (const account of targetAccounts) {
         try {
           const accessToken = await getValidAccessToken(account.id);
-          const emails = await getEmails(accessToken, limit);
+          const emails = await getEmails(accessToken, limit, false);
           const enriched = emails.map((email: any) => ({
             ...email,
             accountId: account.id,
@@ -191,7 +200,7 @@ function createMcpServer(user: User): McpServer {
       }));
 
       return {
-        content: [{ type: "text" as const, text: JSON.stringify(formatted, null, 2) }],
+        content: [{ type: "text" as const, text: JSON.stringify(formatted) }],
       };
     }
   );
@@ -226,7 +235,7 @@ function createMcpServer(user: User): McpServer {
       for (const account of targetAccounts) {
         try {
           const accessToken = await getValidAccessToken(account.id);
-          const emails = await getEmails(accessToken, 50);
+          const emails = await getEmails(accessToken, 50, false);
           const enriched = emails.map((email: any) => ({
             ...email,
             accountId: account.id,
@@ -270,7 +279,7 @@ function createMcpServer(user: User): McpServer {
           {
             type: "text" as const,
             text: formatted.length > 0
-              ? JSON.stringify(formatted, null, 2)
+              ? JSON.stringify(formatted)
               : `No emails found matching "${query}"`,
           },
         ],
@@ -332,11 +341,11 @@ function createMcpServer(user: User): McpServer {
           date: email.receivedDateTime,
           importance: email.importance,
           hasAttachments: email.hasAttachments,
-          body: email.body.contentType === "html" ? stripHtml(email.body.content) : email.body.content,
+          body: truncate(email.body.contentType === "html" ? stripHtml(email.body.content) : email.body.content, MAX_BODY_CHARS),
         };
 
         return {
-          content: [{ type: "text" as const, text: JSON.stringify(formatted, null, 2) }],
+          content: [{ type: "text" as const, text: JSON.stringify(formatted) }],
         };
       } catch (err: any) {
         return {
@@ -439,7 +448,7 @@ function createMcpServer(user: User): McpServer {
           {
             type: "text" as const,
             text: formatted.length > 0
-              ? JSON.stringify(formatted, null, 2)
+              ? JSON.stringify(formatted)
               : "No calendar events found in the specified date range.",
           },
         ],
@@ -496,7 +505,7 @@ function createMcpServer(user: User): McpServer {
         }));
 
         return {
-          content: [{ type: "text" as const, text: JSON.stringify(formatted, null, 2) }],
+          content: [{ type: "text" as const, text: JSON.stringify(formatted) }],
         };
       } catch (err: any) {
         return {
@@ -551,7 +560,7 @@ function createMcpServer(user: User): McpServer {
         }));
 
         return {
-          content: [{ type: "text" as const, text: JSON.stringify(formatted, null, 2) }],
+          content: [{ type: "text" as const, text: JSON.stringify(formatted) }],
         };
       } catch (err: any) {
         return {
@@ -563,7 +572,7 @@ function createMcpServer(user: User): McpServer {
 
   server.tool(
     "get_onedrive_file_content",
-    "Get the content of a specific OneDrive file by its ID. For plain text files (txt, md, csv, json, xml, etc.) under 512 KB, returns the full file content. For other file types (Office documents, PDFs, images), returns metadata and a web link to open the file.",
+    `Get the content of a specific OneDrive file by its ID. For plain text files (txt, md, csv, json, xml, etc.) under 512 KB, returns the file content (truncated to ~${MAX_FILE_CHARS} characters to conserve context; open the web link for the full file). For other file types (Office documents, PDFs, images), returns metadata and a web link to open the file.`,
     {
       account_email: z.string().describe("The email address of the Microsoft account that owns the file"),
       item_id: z.string().describe("The ID of the OneDrive file (obtained from list_onedrive_files or search_onedrive_files)"),
@@ -594,10 +603,10 @@ function createMcpServer(user: User): McpServer {
             size: metadata.size,
             lastModified: metadata.lastModifiedDateTime,
             webUrl: metadata.webUrl,
-            content,
+            content: truncate(content, MAX_FILE_CHARS),
           };
           return {
-            content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+            content: [{ type: "text" as const, text: JSON.stringify(result) }],
           };
         }
 
@@ -612,7 +621,7 @@ function createMcpServer(user: User): McpServer {
             : `This file type (${mimeType}) cannot be read as text. Open it directly at the web URL above, or use Microsoft Graph to download it.`,
         };
         return {
-          content: [{ type: "text" as const, text: JSON.stringify(result, null, 2) }],
+          content: [{ type: "text" as const, text: JSON.stringify(result) }],
         };
       } catch (err: any) {
         return {
@@ -666,7 +675,7 @@ function createMcpServer(user: User): McpServer {
         }));
 
         return {
-          content: [{ type: "text" as const, text: JSON.stringify(formatted, null, 2) }],
+          content: [{ type: "text" as const, text: JSON.stringify(formatted) }],
         };
       } catch (err: any) {
         return {
@@ -721,13 +730,13 @@ function createMcpServer(user: User): McpServer {
               : { name: "Unknown", email: null },
             sentAt: m.createdDateTime,
             editedAt: m.lastModifiedDateTime !== m.createdDateTime ? m.lastModifiedDateTime : null,
-            body: m.body?.contentType === "html" ? stripHtml(m.body.content) : (m.body?.content || ""),
+            body: truncate(m.body?.contentType === "html" ? stripHtml(m.body.content) : (m.body?.content || ""), MAX_BODY_CHARS),
             mentions: (m.mentions || []).map((mention: any) => mention.mentioned?.user?.displayName).filter(Boolean),
             attachments: (m.attachments || []).map((a: any) => ({ name: a.name, contentType: a.contentType })),
           }));
 
         return {
-          content: [{ type: "text" as const, text: JSON.stringify(formatted, null, 2) }],
+          content: [{ type: "text" as const, text: JSON.stringify(formatted) }],
         };
       } catch (err: any) {
         return {
@@ -787,7 +796,7 @@ function createMcpServer(user: User): McpServer {
         });
 
         return {
-          content: [{ type: "text" as const, text: JSON.stringify(formatted, null, 2) }],
+          content: [{ type: "text" as const, text: JSON.stringify(formatted) }],
         };
       } catch (err: any) {
         return {
