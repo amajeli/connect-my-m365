@@ -14,6 +14,7 @@ import InboxPage from "@/pages/inbox";
 import CalendarPage from "@/pages/calendar-page";
 import AccountsPage from "@/pages/accounts";
 import BillingPage from "@/pages/billing";
+import SettingsPage from "@/pages/settings";
 import { Skeleton } from "@/components/ui/skeleton";
 
 function AuthenticatedRouter() {
@@ -39,6 +40,7 @@ function AuthenticatedRouter() {
               <Route path="/inbox" component={InboxPage} />
               <Route path="/calendar" component={CalendarPage} />
               <Route path="/accounts" component={AccountsPage} />
+              <Route path="/settings" component={SettingsPage} />
               <Route path="/billing" component={BillingPage} />
               <Route component={NotFound} />
             </Switch>

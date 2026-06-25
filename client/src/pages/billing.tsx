@@ -17,11 +17,13 @@ import {
 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { Link } from "wouter";
 
 export default function BillingPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [copiedUrl, setCopiedUrl] = useState(false);
+  const [copiedUrlV2, setCopiedUrlV2] = useState(false);
 
   const { data: productsData } = useQuery<{ data: any[] }>({
     queryKey: ["/api/products-with-prices"],
@@ -102,6 +104,18 @@ export default function BillingPage() {
       setCopiedUrl(true);
       setTimeout(() => setCopiedUrl(false), 2000);
       toast({ title: "MCP URL copied" });
+    } catch {
+      toast({ title: "Failed to copy", variant: "destructive" });
+    }
+  };
+
+  const handleCopyUrlV2 = async () => {
+    const url = `${window.location.origin}/mcp/v2`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedUrlV2(true);
+      setTimeout(() => setCopiedUrlV2(false), 2000);
+      toast({ title: "MCP v2 URL copied" });
     } catch {
       toast({ title: "Failed to copy", variant: "destructive" });
     }
@@ -270,6 +284,28 @@ export default function BillingPage() {
                 {copiedUrl ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
               </Button>
             </div>
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">
+              MCP Server URL (v2 — token-efficient)
+            </label>
+            <div className="flex gap-2">
+              <Input
+                readOnly
+                value={`${window.location.origin}/mcp/v2`}
+                className="font-mono text-xs"
+                data-testid="input-mcp-url-v2"
+              />
+              <Button size="icon" variant="ghost" onClick={handleCopyUrlV2} data-testid="button-copy-mcp-url-v2">
+                {copiedUrlV2 ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              v2 returns lean email metadata (fetching full bodies only on demand), supports date/sender filters, honors your{" "}
+              <Link href="/settings" className="underline">Connector Settings</Link>, and can create drafts (never sends).
+              Creating drafts requires re-consenting your Microsoft account with the Mail.ReadWrite permission.
+            </p>
           </div>
 
           <Separator />

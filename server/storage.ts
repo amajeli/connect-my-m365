@@ -1,4 +1,4 @@
-import { type ConnectedAccount, type InsertConnectedAccount, type User, type InsertUser, connectedAccounts, users, oauthClients, oauthCodes, oauthTokens } from "@shared/schema";
+import { type ConnectedAccount, type InsertConnectedAccount, type User, type InsertUser, type ConnectorSettings, type ConnectorSettingsUpdate, connectedAccounts, users, oauthClients, oauthCodes, oauthTokens, connectorSettings } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, sql } from "drizzle-orm";
 
@@ -34,6 +34,9 @@ export interface IStorage {
   getOAuthTokenByAccessToken(accessToken: string): Promise<any | undefined>;
   getOAuthTokenByRefreshToken(refreshToken: string): Promise<any | undefined>;
   deleteOAuthToken(id: string): Promise<void>;
+
+  getConnectorSettings(userId: string): Promise<ConnectorSettings | undefined>;
+  upsertConnectorSettings(userId: string, data: ConnectorSettingsUpdate): Promise<ConnectorSettings>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -199,6 +202,23 @@ export class DatabaseStorage implements IStorage {
 
   async deleteOAuthToken(id: string): Promise<void> {
     await db.delete(oauthTokens).where(eq(oauthTokens.id, id));
+  }
+
+  async getConnectorSettings(userId: string): Promise<ConnectorSettings | undefined> {
+    const [settings] = await db.select().from(connectorSettings).where(eq(connectorSettings.userId, userId));
+    return settings;
+  }
+
+  async upsertConnectorSettings(userId: string, data: ConnectorSettingsUpdate): Promise<ConnectorSettings> {
+    const [settings] = await db
+      .insert(connectorSettings)
+      .values({ userId, ...data, updatedAt: new Date() })
+      .onConflictDoUpdate({
+        target: connectorSettings.userId,
+        set: { ...data, updatedAt: new Date() },
+      })
+      .returning();
+    return settings;
   }
 }
 

@@ -18,36 +18,36 @@ import {
 } from "./microsoft";
 import type { User, OutlookEmail, OutlookCalendarEvent } from "@shared/schema";
 
-const FREE_EMAIL_DAILY_LIMIT = 20;
+export const FREE_EMAIL_DAILY_LIMIT = 20;
 const freeEmailCounts = new Map<string, { date: string; count: number }>();
 
-const MAX_BODY_CHARS = 5000;
-const MAX_FILE_CHARS = 16000;
+export const MAX_BODY_CHARS = 5000;
+export const MAX_FILE_CHARS = 16000;
 
-function truncate(text: string | null | undefined, max: number): string {
+export function truncate(text: string | null | undefined, max: number): string {
   if (!text) return text ?? "";
   if (text.length <= max) return text;
   return text.slice(0, max) + `\n…[truncated ${text.length - max} more characters]`;
 }
 
-function getFreeEmailsUsedToday(userId: string): number {
+export function getFreeEmailsUsedToday(userId: string): number {
   const today = new Date().toISOString().split("T")[0];
   const entry = freeEmailCounts.get(userId);
   if (!entry || entry.date !== today) return 0;
   return entry.count;
 }
 
-function incrementFreeEmailCount(userId: string, amount: number) {
+export function incrementFreeEmailCount(userId: string, amount: number) {
   const today = new Date().toISOString().split("T")[0];
   const current = getFreeEmailsUsedToday(userId);
   freeEmailCounts.set(userId, { date: today, count: current + amount });
 }
 
-function isFullAccess(user: User): boolean {
+export function isFullAccess(user: User): boolean {
   return ["active", "trialing", "admin"].includes(user.subscriptionStatus || "");
 }
 
-function checkSubscription(user: User): string | null {
+export function checkSubscription(user: User): string | null {
   const anyAccess = ["active", "trialing", "admin", "free"];
   if (!anyAccess.includes(user.subscriptionStatus || "")) {
     return "Active subscription required to use Microsoft 365 Connector tools. Please visit the app to subscribe or start a free trial.";
@@ -55,7 +55,7 @@ function checkSubscription(user: User): string | null {
   return null;
 }
 
-function checkFullAccessRequired(user: User, toolName: string): string | null {
+export function checkFullAccessRequired(user: User, toolName: string): string | null {
   if (!isFullAccess(user)) {
     return `The "${toolName}" tool requires a paid subscription. The Free tier only includes email access (up to ${FREE_EMAIL_DAILY_LIMIT} emails/day). Please upgrade at the Microsoft 365 Connector web app.`;
   }
@@ -809,7 +809,7 @@ function createMcpServer(user: User): McpServer {
   return server;
 }
 
-async function validateMcpAuth(req: Request, res: Response): Promise<User | null> {
+export async function validateMcpAuth(req: Request, res: Response): Promise<User | null> {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
     res.status(401).json({

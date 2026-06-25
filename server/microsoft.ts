@@ -12,6 +12,7 @@ const SCOPES = [
   "profile",
   "offline_access",
   "Mail.Read",
+  "Mail.ReadWrite",
   "Calendars.Read",
   "User.Read",
   "Files.Read",
@@ -175,6 +176,99 @@ export async function getCalendarEvents(accessToken: string) {
 
   const data = await response.json();
   return data.value || [];
+}
+
+export async function getFilteredEmails(
+  accessToken: string,
+  opts: {
+    top?: number;
+    afterDateTime?: string;
+    beforeDateTime?: string;
+    sender?: string;
+    focusedOnly?: boolean;
+  } = {}
+) {
+  const { top = 25, afterDateTime, beforeDateTime, sender, focusedOnly } = opts;
+  const filters: string[] = [];
+  if (afterDateTime) filters.push(`receivedDateTime ge ${afterDateTime}`);
+  if (beforeDateTime) filters.push(`receivedDateTime lt ${beforeDateTime}`);
+  if (sender) filters.push(`from/emailAddress/address eq '${sender.replace(/'/g, "''")}'`);
+  if (focusedOnly) filters.push(`inferenceClassification eq 'focused'`);
+
+  const fields = "id,subject,from,toRecipients,receivedDateTime,bodyPreview,isRead,hasAttachments,importance,inferenceClassification";
+  const params = new URLSearchParams();
+  params.set("$select", fields);
+  params.set("$top", String(top));
+  if (filters.length) params.set("$filter", filters.join(" and "));
+  // Graph rejects $orderby combined with filters on non-date properties
+  // (e.g. inferenceClassification / from). Sort client-side in those cases.
+  const hasNonDateFilter = Boolean(sender) || Boolean(focusedOnly);
+  if (!hasNonDateFilter) params.set("$orderby", "receivedDateTime DESC");
+
+  const response = await fetch(
+    `https://graph.microsoft.com/v1.0/me/mailfolders/inbox/messages?${params.toString()}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Failed to fetch emails: ${error}`);
+  }
+
+  const data = await response.json();
+  const values = data.value || [];
+  if (hasNonDateFilter) {
+    values.sort(
+      (a: any, b: any) =>
+        new Date(b.receivedDateTime).getTime() - new Date(a.receivedDateTime).getTime()
+    );
+  }
+  return values;
+}
+
+export async function getEmailById(accessToken: string, messageId: string) {
+  const fields = "id,subject,from,toRecipients,ccRecipients,receivedDateTime,body,bodyPreview,isRead,hasAttachments,importance,webLink,inferenceClassification";
+  const response = await fetch(
+    `https://graph.microsoft.com/v1.0/me/messages/${encodeURIComponent(messageId)}?$select=${fields}`,
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Failed to fetch email: ${error}`);
+  }
+
+  return await response.json();
+}
+
+export async function createEmailDraft(
+  accessToken: string,
+  opts: { to: string[]; cc?: string[]; subject: string; body: string; bodyType?: "Text" | "HTML" }
+) {
+  const message: any = {
+    subject: opts.subject,
+    body: { contentType: opts.bodyType || "Text", content: opts.body },
+    toRecipients: opts.to.map((address) => ({ emailAddress: { address } })),
+  };
+  if (opts.cc && opts.cc.length) {
+    message.ccRecipients = opts.cc.map((address) => ({ emailAddress: { address } }));
+  }
+
+  const response = await fetch("https://graph.microsoft.com/v1.0/me/messages", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(message),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Failed to create draft: ${error}`);
+  }
+
+  return await response.json();
 }
 
 export async function listDriveItems(accessToken: string, path: string = "root", top: number = 50) {

@@ -172,3 +172,21 @@ export const oauthTokens = pgTable("oauth_tokens", {
   expiresAt: timestamp("expires_at").notNull(),
   createdAt: timestamp("created_at").notNull().default(sql`now()`),
 });
+
+export const connectorSettings = pgTable("connector_settings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().unique().references(() => users.id, { onDelete: "cascade" }),
+  focusedOnly: boolean("focused_only").notNull().default(false),
+  approvedSenders: text("approved_senders").array().notNull().default(sql`'{}'::text[]`),
+  allowedOnedriveFolders: text("allowed_onedrive_folders").array().notNull().default(sql`'{}'::text[]`),
+  updatedAt: timestamp("updated_at").notNull().default(sql`now()`),
+});
+
+export type ConnectorSettings = typeof connectorSettings.$inferSelect;
+
+export const connectorSettingsUpdateSchema = z.object({
+  focusedOnly: z.boolean().optional(),
+  approvedSenders: z.array(z.string().trim().min(1)).max(200).optional(),
+  allowedOnedriveFolders: z.array(z.string().trim().min(1)).max(200).optional(),
+});
+export type ConnectorSettingsUpdate = z.infer<typeof connectorSettingsUpdateSchema>;

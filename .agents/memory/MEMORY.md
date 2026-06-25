@@ -1,2 +1,3 @@
 - [Claude.ai MCP connector debugging](claude-mcp-connector.md) — checklist for "won't connect in Claude": deployment privacy, dev/prod DB split, stale DCR client cache, tier activation.
 - [MCP tool response token efficiency](mcp-token-efficiency.md) — compact JSON, cap body/file fields, fetch only needed upstream fields; standing user requirement to minimize token burn.
+- [MCP v2 allow-list enforcement](mcp-v2-allowlist-enforcement.md) — per-user content allow-lists must be checked on EVERY read path (get_email, resource reads), not just list/search; v2 is separate from v1.

@@ -1,4 +1,4 @@
-import { Mail, Calendar, Settings, CreditCard, Plus, LogOut, LayoutGrid } from "lucide-react";
+import { Mail, Calendar, Settings, CreditCard, Plus, LogOut, LayoutGrid, SlidersHorizontal } from "lucide-react";
 import { useLocation, Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
@@ -27,6 +27,7 @@ const navItems = [
   { title: "Inbox", url: "/inbox", icon: Mail },
   { title: "Calendar", url: "/calendar", icon: Calendar },
   { title: "Accounts", url: "/accounts", icon: Settings },
+  { title: "Connector Settings", url: "/settings", icon: SlidersHorizontal },
   { title: "Billing", url: "/billing", icon: CreditCard },
 ];
 

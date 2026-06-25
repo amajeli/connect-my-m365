@@ -9,9 +9,11 @@ import {
   getValidAccessToken,
   getEmails,
   getCalendarEvents,
+  listDriveItems,
 } from "./microsoft";
 import { getUncachableStripeClient, getStripePublishableKey } from "./stripeClient";
 import type { OutlookEmail, OutlookCalendarEvent } from "@shared/schema";
+import { connectorSettingsUpdateSchema } from "@shared/schema";
 
 function requireAuth(req: Request, res: Response, next: NextFunction) {
   if (!req.session.userId) {
@@ -489,6 +491,60 @@ export async function registerRoutes(
     try {
       const newKey = await storage.regenerateMcpApiKey(req.session.userId!);
       res.json({ mcpApiKey: newKey });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/settings", requireAuth, async (req, res) => {
+    try {
+      const settings = await storage.getConnectorSettings(req.session.userId!);
+      res.json({
+        focusedOnly: settings?.focusedOnly ?? false,
+        approvedSenders: settings?.approvedSenders ?? [],
+        allowedOnedriveFolders: settings?.allowedOnedriveFolders ?? [],
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.put("/api/settings", requireAuth, async (req, res) => {
+    try {
+      const parsed = connectorSettingsUpdateSchema.parse(req.body);
+      const settings = await storage.upsertConnectorSettings(req.session.userId!, parsed);
+      res.json({
+        focusedOnly: settings.focusedOnly,
+        approvedSenders: settings.approvedSenders ?? [],
+        allowedOnedriveFolders: settings.allowedOnedriveFolders ?? [],
+      });
+    } catch (err: any) {
+      res.status(400).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/onedrive/browse", requireAuth, async (req, res) => {
+    try {
+      const accountEmail = req.query.account as string | undefined;
+      const path = (req.query.path as string | undefined) || "root";
+      if (!accountEmail) {
+        return res.status(400).json({ message: "account query parameter is required" });
+      }
+      const accounts = await storage.getAccountsByUserId(req.session.userId!);
+      const account = accounts.find((a) => a.email.toLowerCase() === accountEmail.toLowerCase());
+      if (!account) {
+        return res.status(404).json({ message: "Connected account not found" });
+      }
+      const accessToken = await getValidAccessToken(account.id);
+      const items = await listDriveItems(accessToken, path, 100);
+      const folders = items
+        .filter((item: any) => item.folder)
+        .map((item: any) => ({
+          id: item.id,
+          name: item.name,
+          path: `${(item.parentReference?.path?.replace("/drive/root:", "") || "").replace(/^\/+/, "")}${item.parentReference?.path && item.parentReference.path !== "/drive/root:" ? "/" : ""}${item.name}`.replace(/^\/+/, ""),
+        }));
+      res.json({ folders });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }

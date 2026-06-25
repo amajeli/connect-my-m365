@@ -40,7 +40,7 @@ A multi-user SaaS web application that connects to Microsoft 365 (work and perso
 5. User subscribes via Stripe checkout to activate MCP connector
 
 ## MCP Connector (Claude.ai Integration)
-The app exposes an MCP server at `/mcp` that Claude.ai can connect to as a custom connector.
+The app exposes an MCP server at `/mcp` (v1) that Claude.ai can connect to as a custom connector. A second, token-efficient server is exposed at `/mcp/v2` (see "MCP v2" below). Both run side by side and share authentication and subscription gating; v1 is unchanged.
 
 ### MCP Tools Available
 - `list_accounts` - List all connected Microsoft Outlook accounts (user-scoped)
@@ -67,15 +67,36 @@ The app exposes an MCP server at `/mcp` that Claude.ai can connect to as a custo
 
 ### Setting Up in Claude.ai
 1. Subscribe to activate the connector
-2. Go to Billing page, copy the MCP Server URL
+2. Go to Billing page, copy the MCP Server URL (v1 `/mcp` or v2 `/mcp/v2`)
 3. In Claude.ai Settings > Connectors, click "Add custom connector"
 4. Paste the MCP Server URL - Claude handles OAuth authentication automatically
+
+## MCP v2 (token-efficient connector at `/mcp/v2`)
+A separate MCP server (`server/mcpV2.ts`, name `microsoft365-connector-v2`) built for minimal token usage. v1 at `/mcp` is left fully intact. v2 reuses v1's auth, subscription/tier gating, and free-tier email counter (exported from `server/mcp.ts`).
+
+### v2 differences vs v1
+- **Lean emails + on-demand bodies**: `get_recent_emails` / `search_emails` return compact metadata (subject, sender, date, preview) plus a `resource` URI per email — never full bodies. The body is loaded only when needed via the `outlook-email://{account}/{messageId}` resource or the `get_email` tool. Default email limit is 5.
+- **Server-side filters**: email tools accept `after_datetime` / `before_datetime` (accept `today`/`yesterday`/`tomorrow`, ISO date, or ISO datetime) and `sender`.
+- **`outlook_calendar_search`**: targeted calendar lookups by datetime window (in addition to the v1-style `get_calendar_events` overview).
+- **`create_email_draft`**: creates a DRAFT only (saved to Drafts, never sends). Requires the `Mail.ReadWrite` Graph scope.
+- **Per-user allow-lists (Connector Settings)** applied automatically:
+  - Focused-inbox-only toggle (`inferenceClassification eq 'focused'`).
+  - Approved senders (full address `jane@acme.com` or domain `@acme.com`); empty = allow all.
+  - Designated OneDrive folders; if any are set, all OneDrive tools are restricted to those folders and subfolders; empty = all of OneDrive.
+- Resource registered via `registerResource` + `ResourceTemplate`; account/messageId are URL-encoded into the URI.
+
+### v2 tools
+`list_accounts`, `get_recent_emails`, `search_emails`, `get_email`, `create_email_draft`, `get_calendar_events`, `outlook_calendar_search`, `list_onedrive_files`, `search_onedrive_files`, `get_onedrive_file_content`, `list_teams_chats`, `get_teams_chat_messages`, `search_teams_messages` + resource `outlook-email://{account}/{messageId}`.
+
+### Connector Settings UI
+`/settings` page (`client/src/pages/settings.tsx`): Focused-only switch, approved-sender badge editor, and OneDrive folder allow-list with a live folder browser. Backed by `GET/PUT /api/settings` and `GET /api/onedrive/browse`.
 
 ## Project Structure
 - `shared/schema.ts` - Database schema (users, connected_accounts, oauth_clients, oauth_codes, oauth_tokens)
 - `server/routes.ts` - API endpoints (auth, accounts, emails, calendar, Stripe checkout/billing)
 - `server/oauth.ts` - OAuth 2.0 provider (discovery, DCR, authorize, token endpoints)
-- `server/mcp.ts` - MCP server with per-user scoping and OAuth/API key auth
+- `server/mcp.ts` - MCP v1 server with per-user scoping and OAuth/API key auth (exports shared auth/gating helpers)
+- `server/mcpV2.ts` - MCP v2 server (token-efficient, allow-lists, drafts) at `/mcp/v2`
 - `server/microsoft.ts` - Microsoft Graph API integration (OAuth, token management, API calls)
 - `server/storage.ts` - Database storage layer + Stripe schema queries + OAuth storage
 - `server/stripeClient.ts` - Stripe client via Replit connector credentials
@@ -88,7 +109,8 @@ The app exposes an MCP server at `/mcp` that Claude.ai can connect to as a custo
 - `client/src/pages/inbox.tsx` - Email inbox view
 - `client/src/pages/calendar-page.tsx` - Calendar view
 - `client/src/pages/accounts.tsx` - Account management
-- `client/src/pages/billing.tsx` - Subscription management and MCP setup instructions
+- `client/src/pages/billing.tsx` - Subscription management and MCP setup instructions (v1 + v2 URLs)
+- `client/src/pages/settings.tsx` - Connector Settings (focused-only, approved senders, OneDrive folder allow-list)
 - `client/src/components/app-sidebar.tsx` - Navigation sidebar with user menu
 
 ## Database Schema
@@ -122,6 +144,14 @@ The app exposes an MCP server at `/mcp` that Claude.ai can connect to as a custo
 - id (varchar, PK, UUID)
 - accessToken (text, unique), refreshToken (text, unique), clientId, userId (FK), scope, expiresAt, createdAt
 
+### connector_settings table (per-user v2 allow-lists)
+- id (varchar, PK, UUID)
+- userId (varchar, unique FK → users.id, cascade delete)
+- focusedOnly (bool, default false)
+- approvedSenders (text[], default {})
+- allowedOnedriveFolders (text[], default {})
+- updatedAt (timestamp)
+
 ## API Routes
 ### Auth
 - `GET /api/auth/me` - Get current user (returns null if not authenticated)
@@ -152,7 +182,8 @@ The app exposes an MCP server at `/mcp` that Claude.ai can connect to as a custo
 - `POST /oauth/token` - Token endpoint (authorization_code + refresh_token grants)
 
 ### MCP
-- `POST /mcp` - MCP Streamable HTTP endpoint (requires OAuth Bearer token or legacy API key + active subscription)
+- `POST /mcp` - MCP v1 Streamable HTTP endpoint (requires OAuth Bearer token or legacy API key + active subscription)
+- `POST /mcp/v2`, `GET /mcp/v2`, `DELETE /mcp/v2` - MCP v2 endpoint (same auth/gating as v1)
 - `GET /mcp` - MCP SSE notifications endpoint
 - `DELETE /mcp` - MCP session termination
 
@@ -167,7 +198,8 @@ The app exposes an MCP server at `/mcp` that Claude.ai can connect to as a custo
 Azure AD app registration must have:
 - Supported account types: "Accounts in any organizational directory and personal Microsoft accounts"
 - Redirect URI: `https://<domain>/api/auth/callback`
-- API permissions: Mail.Read, Calendars.Read, User.Read, Files.Read, Chat.Read, offline_access
+- API permissions: Mail.Read, Mail.ReadWrite (for v2 drafts), Calendars.Read, User.Read, Files.Read, Chat.Read, offline_access
+- NOTE: `Mail.ReadWrite` was added to the requested scopes — existing connected accounts must re-consent (reconnect) before `create_email_draft` will work.
 
 ## Important Notes
 - Never create tables in the `stripe` schema — managed by stripe-replit-sync
