@@ -200,10 +200,10 @@ export async function getFilteredEmails(
   params.set("$select", fields);
   params.set("$top", String(top));
   if (filters.length) params.set("$filter", filters.join(" and "));
-  // Graph rejects $orderby combined with filters on non-date properties
-  // (e.g. inferenceClassification / from). Sort client-side in those cases.
-  const hasNonDateFilter = Boolean(sender) || Boolean(focusedOnly);
-  if (!hasNonDateFilter) params.set("$orderby", "receivedDateTime DESC");
+  // Graph rejects $orderby when $filter uses from/toRecipients.
+  // inferenceClassification (focused) works fine with ordering.
+  const hasSenderFilter = Boolean(sender);
+  if (!hasSenderFilter) params.set("$orderby", "receivedDateTime DESC");
 
   const response = await fetch(
     `https://graph.microsoft.com/v1.0/me/mailfolders/inbox/messages?${params.toString()}`,
@@ -217,7 +217,7 @@ export async function getFilteredEmails(
 
   const data = await response.json();
   const values = data.value || [];
-  if (hasNonDateFilter) {
+  if (hasSenderFilter) {
     values.sort(
       (a: any, b: any) =>
         new Date(b.receivedDateTime).getTime() - new Date(a.receivedDateTime).getTime()
