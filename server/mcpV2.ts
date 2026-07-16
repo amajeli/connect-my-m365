@@ -54,6 +54,25 @@ function isBlockedSender(address: string): boolean {
   return getSenderBlocklist().some((blocked) => addr.includes(blocked));
 }
 
+const NEWSLETTER_SENDER_PATTERNS = [
+  "newsletter@", "newsletters@", "digest@", "weekly@",
+  "marketing@", "promo@", "promotions@", "campaign@",
+  "deals@", "offers@", "updates@",
+];
+
+const NEWSLETTER_SUBJECT_KEYWORDS = [
+  "newsletter", "weekly digest", "daily digest", "weekly roundup",
+  "roundup", "this week in", "your weekly", "your daily",
+  "weekly update", "monthly update", "weekly report", "daily brief",
+];
+
+function isNewsletter(email: any): boolean {
+  const from = (email.from?.emailAddress?.address || "").toLowerCase();
+  if (NEWSLETTER_SENDER_PATTERNS.some((p) => from.includes(p))) return true;
+  const subject = (email.subject || "").toLowerCase();
+  return NEWSLETTER_SUBJECT_KEYWORDS.some((k) => subject.includes(k));
+}
+
 function formatEmailBriefing(e: any, opts: { metadataOnly: boolean; includeResource: boolean }): any {
   const preview = opts.metadataOnly
     ? (e.bodyPreview || "").slice(0, 100)
@@ -225,8 +244,9 @@ function createMcpV2Server(user: User): McpServer {
       limit: z.number().min(1).max(25).default(12).describe("Maximum number of emails to return (default: 12, max: 25)."),
       metadata_only: z.boolean().default(true).describe("When true (default), returns slim fields only: subject, from, date, isRead, hasAttachments, preview capped at 100 chars. Set false for full preview text."),
       include_resource_uris: z.boolean().default(false).describe("When true, includes outlook-email:// resource URIs in the response. Off by default to save tokens."),
+      skip_newsletters: z.boolean().default(true).describe("When true (default), filters out newsletters, digests, roundups, and marketing emails. Set false to include them."),
     },
-    async ({ account_email, after_datetime, before_datetime, sender, limit, metadata_only, include_resource_uris }) => {
+    async ({ account_email, after_datetime, before_datetime, sender, limit, metadata_only, include_resource_uris, skip_newsletters }) => {
       const subError = checkSubscription(user);
       if (subError) return { content: [{ type: "text" as const, text: subError }] };
 
@@ -289,6 +309,11 @@ function createMcpV2Server(user: User): McpServer {
 
       // Apply sender blocklist (automated/transactional noise)
       all = all.filter((e) => !isBlockedSender(e.from?.emailAddress?.address || ""));
+
+      // Apply newsletter filter
+      if (skip_newsletters) {
+        all = all.filter((e) => !isNewsletter(e));
+      }
 
       all.sort((a, b) => new Date(b.receivedDateTime).getTime() - new Date(a.receivedDateTime).getTime());
       const limited = all.slice(0, limit);
