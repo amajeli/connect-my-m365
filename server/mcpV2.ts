@@ -35,6 +35,47 @@ function stripHtml(html: string): string {
   return html ? html.replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim() : "";
 }
 
+const DEFAULT_SENDER_BLOCKLIST = [
+  "no-reply@", "noreply@", "donotreply@", "do-not-reply@", "no_reply@",
+  "notifications@", "notification@", "receipts@", "billing@",
+  "alerts@", "alert@", "auto-confirm@", "mailer-daemon@",
+];
+
+function getSenderBlocklist(): string[] {
+  const envList = process.env.EMAIL_SENDER_BLOCKLIST;
+  if (envList) {
+    return envList.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean);
+  }
+  return DEFAULT_SENDER_BLOCKLIST;
+}
+
+function isBlockedSender(address: string): boolean {
+  const addr = (address || "").toLowerCase();
+  return getSenderBlocklist().some((blocked) => addr.includes(blocked));
+}
+
+function formatEmailBriefing(e: any, opts: { metadataOnly: boolean; includeResource: boolean }): any {
+  const preview = opts.metadataOnly
+    ? (e.bodyPreview || "").slice(0, 100)
+    : (e.bodyPreview || "");
+  const result: any = {
+    id: e.id,
+    account: e.accountEmail,
+    subject: e.subject,
+    from: e.from?.emailAddress
+      ? `${e.from.emailAddress.name} <${e.from.emailAddress.address}>`
+      : null,
+    date: e.receivedDateTime,
+    isRead: e.isRead,
+    hasAttachments: e.hasAttachments,
+    preview,
+  };
+  if (opts.includeResource) {
+    result.resource = emailUri(e.accountEmail, e.id);
+  }
+  return result;
+}
+
 function parseDateInput(input: string | undefined, boundary: "start" | "end"): string | undefined {
   if (!input) return undefined;
   const lower = input.trim().toLowerCase();
@@ -175,15 +216,17 @@ function createMcpV2Server(user: User): McpServer {
 
   server.tool(
     "get_recent_emails",
-    "Fetch recent emails as lean metadata (subject, sender, date, preview) — NOT full bodies — to conserve context. Each result includes a `resource` URI; read that resource (or call get_email) to load the full body on demand. Supports date-range and sender filters. Honors the user's connector settings (Focused-inbox-only and approved-sender allow-list).",
+    "Fetch recent emails as lean metadata for briefing — subject, sender, date, isRead, hasAttachments, and a short preview. Defaults to the last 18 hours, limit 12, metadata-only mode, no resource URIs. Call get_email by ID for full body. Automated/transactional senders are filtered out automatically. Honors Focused-inbox-only and approved-sender connector settings.",
     {
       account_email: z.string().optional().describe("Filter to a specific connected account email. If omitted, fetches from all accounts."),
-      after_datetime: z.string().optional().describe("Only emails received on/after this time. Accepts 'today', 'yesterday', an ISO date (YYYY-MM-DD), or full ISO datetime."),
+      after_datetime: z.string().optional().describe("Only emails received on/after this time. Defaults to 18 hours ago. Accepts 'today', 'yesterday', an ISO date (YYYY-MM-DD), or full ISO datetime."),
       before_datetime: z.string().optional().describe("Only emails received before this time. Accepts 'today', an ISO date (YYYY-MM-DD), or full ISO datetime."),
       sender: z.string().optional().describe("Only emails from this exact sender email address."),
-      limit: z.number().min(1).max(25).default(5).describe("Maximum number of emails to return (default: 5, max: 25)."),
+      limit: z.number().min(1).max(25).default(12).describe("Maximum number of emails to return (default: 12, max: 25)."),
+      metadata_only: z.boolean().default(true).describe("When true (default), returns slim fields only: subject, from, date, isRead, hasAttachments, preview capped at 100 chars. Set false for full preview text."),
+      include_resource_uris: z.boolean().default(false).describe("When true, includes outlook-email:// resource URIs in the response. Off by default to save tokens."),
     },
-    async ({ account_email, after_datetime, before_datetime, sender, limit }) => {
+    async ({ account_email, after_datetime, before_datetime, sender, limit, metadata_only, include_resource_uris }) => {
       const subError = checkSubscription(user);
       if (subError) return { content: [{ type: "text" as const, text: subError }] };
 
@@ -210,10 +253,13 @@ function createMcpV2Server(user: User): McpServer {
         return { content: [{ type: "text" as const, text: account_email ? `No connected account found with email: ${account_email}` : "No Microsoft accounts are connected." }] };
       }
 
-      const after = parseDateInput(after_datetime, "start");
+      // Default to 18-hour rolling window if no after_datetime provided
+      const effectiveAfterDatetime = after_datetime || new Date(Date.now() - 18 * 60 * 60 * 1000).toISOString();
+      const after = parseDateInput(effectiveAfterDatetime, "start");
       const before = parseDateInput(before_datetime, "end");
+
       const needsClientFilter = settings.focusedOnly || settings.approvedSenders.length > 0 || Boolean(sender);
-      const fetchTop = needsClientFilter ? Math.max(limit, 50) : limit;
+      const fetchTop = needsClientFilter ? Math.max(limit * 4, 50) : Math.max(limit * 2, 25);
 
       let all: any[] = [];
       for (const account of targetAccounts) {
@@ -236,9 +282,14 @@ function createMcpV2Server(user: User): McpServer {
         }
       }
 
+      // Apply approved-sender allow-list
       if (settings.approvedSenders.length > 0) {
         all = all.filter((e) => senderMatches(e.from?.emailAddress?.address || "", settings.approvedSenders));
       }
+
+      // Apply sender blocklist (automated/transactional noise)
+      all = all.filter((e) => !isBlockedSender(e.from?.emailAddress?.address || ""));
+
       all.sort((a, b) => new Date(b.receivedDateTime).getTime() - new Date(a.receivedDateTime).getTime());
       const limited = all.slice(0, limit);
 
@@ -248,10 +299,13 @@ function createMcpV2Server(user: User): McpServer {
         return { content: [{ type: "text" as const, text: "No emails found matching the given filters and connector settings." }] };
       }
 
+      const formatted = limited.map((e) => formatEmailBriefing(e, { metadataOnly: metadata_only, includeResource: include_resource_uris }));
+      const resourceLinks = include_resource_uris ? limited.map(emailResourceLink) : [];
+
       return {
         content: [
-          { type: "text" as const, text: JSON.stringify(limited.map(leanEmail)) },
-          ...limited.map(emailResourceLink),
+          { type: "text" as const, text: JSON.stringify(formatted) },
+          ...resourceLinks,
         ],
       };
     }

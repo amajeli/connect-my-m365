@@ -1,0 +1,146 @@
+# My_EA Connector — Update Instructions
+## Token Efficiency & Briefing Quality Improvements
+
+These updates apply to the `get_recent_emails` tool (and related email functions) in the My_EA MCP connector. Implement all five changes below.
+
+---
+
+### 1. Tighten the Default Date Window
+
+**Where:** `get_recent_emails` tool — `after_datetime` default value
+
+**Change:** Update the default from open-ended / "yesterday midnight" to a rolling **18-hour lookback** from the time of the call.
+
+```python
+# Before (example — whatever the current default is):
+after_datetime = "yesterday"
+
+# After:
+from datetime import datetime, timedelta, timezone
+after_datetime = (datetime.now(timezone.utc) - timedelta(hours=18)).isoformat()
+```
+
+If the default is set in a config object or tool schema rather than in code, set it to `-18h` or `PT18H` (ISO 8601 duration), or compute it at runtime as shown above.
+
+---
+
+### 2. Lower the Default Email Limit
+
+**Where:** `get_recent_emails` tool — `limit` parameter default
+
+**Change:** Drop the default from 25 to **12**. This is plenty for a daily briefing and cuts payload in half on busy days.
+
+```python
+# Before:
+limit: int = 25
+
+# After:
+limit: int = 12
+```
+
+---
+
+### 3. Add a Sender Blocklist (Auto-Filter Noise)
+
+**Where:** Inside `get_recent_emails` — after emails are fetched, before they are returned
+
+**Change:** Filter out emails from known automated/transactional senders before returning results. These never require action in a briefing context.
+
+```python
+SENDER_BLOCKLIST = [
+    "no_reply@email.apple.com",
+    "no.reply.alerts@chase.com",
+    "noreply@paypal.com",
+    "donotreply@",
+    "notifications@",
+    "no-reply@",          # catches Anthropic system emails, most SaaS alerts
+    "noreply@",
+    "receipts@",
+    "billing@",
+    "alerts@",
+    "auto-confirm@",
+    "mailer-daemon@",
+]
+
+def is_blocked_sender(sender_email: str) -> bool:
+    sender_lower = sender_email.lower()
+    return any(blocked in sender_lower for blocked in SENDER_BLOCKLIST)
+
+# Apply filter after fetch:
+emails = [e for e in raw_emails if not is_blocked_sender(e.get("from", ""))]
+```
+
+> **Note:** Make the blocklist configurable (e.g., read from an env variable or config file) so it can be updated without a code deploy.
+
+---
+
+### 4. Strip Resource URIs from Default Output
+
+**Where:** `get_recent_emails` response serialization
+
+**Change:** The long `outlook-email://...` resource URIs are token-expensive and not needed for briefing summaries. Suppress them from the default response. Only include them if a `include_resource_uris=True` parameter is explicitly passed.
+
+```python
+# Add optional parameter to the tool:
+def get_recent_emails(
+    ...,
+    include_resource_uris: bool = False   # <-- add this
+):
+    ...
+    for email in emails:
+        if not include_resource_uris:
+            email.pop("resource", None)   # strip the URI field
+    return emails
+```
+
+This alone meaningfully reduces the output payload on every standard briefing call.
+
+---
+
+### 5. Implement Two-Phase Fetch (Metadata-First)
+
+**Where:** New optional mode on `get_recent_emails`, or a new companion tool `get_recent_emails_meta`
+
+**Change:** Add a `metadata_only` flag (default `True` for briefing use). When set, return only: `subject`, `from`, `date`, `isRead`, `hasAttachments`, and a short `preview` (max 100 chars). Full body / full preview only loads when `metadata_only=False` or when a specific email is fetched by ID.
+
+```python
+def get_recent_emails(
+    ...,
+    metadata_only: bool = True   # <-- add this
+):
+    ...
+    if metadata_only:
+        slim_fields = ["id", "subject", "from", "date", "isRead", "hasAttachments"]
+        emails = [
+            {k: e[k] for k in slim_fields if k in e} |
+            {"preview": e.get("preview", "")[:100]}   # cap preview at 100 chars
+            for e in emails
+        ]
+    return emails
+```
+
+> For the morning briefing, always call with `metadata_only=True`. Only call with `metadata_only=False` (or use `get_email` by ID) when drilling into a specific message that needs a full read.
+
+---
+
+## Summary of Changes
+
+| # | What | Where | Impact |
+|---|------|-------|--------|
+| 1 | Default date window → 18 hours | `get_recent_emails` default | Fewer irrelevant emails fetched |
+| 2 | Default limit → 12 | `get_recent_emails` default | Smaller payload, faster calls |
+| 3 | Sender blocklist | Post-fetch filter | Cuts automated noise before it hits the briefing |
+| 4 | Strip resource URIs by default | Response serialization | Removes long token-heavy strings from every call |
+| 5 | Metadata-only mode (default on) | `get_recent_emails` parameter | Biggest token savings — full content only on demand |
+
+---
+
+## Testing Checklist After Deploy
+
+- [ ] Run a briefing call and confirm email count is ≤ 12
+- [ ] Confirm Chase, Apple, and Anthropic system emails are filtered out
+- [ ] Confirm `resource` URI field is absent from default response
+- [ ] Confirm `preview` is truncated to ~100 chars in metadata-only mode
+- [ ] Test `metadata_only=False` explicitly and confirm full previews return
+- [ ] Test `include_resource_uris=True` and confirm URIs come back when needed
+- [ ] Verify date window correctly reflects ~18 hours back from call time (not midnight)
