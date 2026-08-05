@@ -112,17 +112,17 @@ export default function AccountsPage() {
                     </span>
                     <span className="flex items-center gap-1">
                       <Shield className="w-3 h-3" />
-                      Read-only access
+                      Read & write access
                     </span>
                   </div>
                   <div className="flex items-center gap-2 mt-2">
                     <Badge variant="outline" className="gap-1 text-xs">
                       <Mail className="w-3 h-3" />
-                      Mail.Read
+                      Mail.ReadWrite
                     </Badge>
                     <Badge variant="outline" className="gap-1 text-xs">
                       <Calendar className="w-3 h-3" />
-                      Calendars.Read
+                      Calendars.ReadWrite
                     </Badge>
                   </div>
                 </div>

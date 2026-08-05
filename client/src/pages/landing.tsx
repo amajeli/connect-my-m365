@@ -193,7 +193,7 @@ export default function LandingPage() {
             <div>
               <h3 className="font-semibold mb-1">Security & Privacy</h3>
               <p className="text-sm text-muted-foreground">
-                We use Microsoft OAuth2 with read-only permissions. We never store your email
+                We use Microsoft OAuth2 with delegated permissions. We never store your email
                 content or file data. Your access tokens are encrypted and only used to make API
                 calls on your behalf. Each user gets a unique MCP API key for isolated, secure access.
               </p>
