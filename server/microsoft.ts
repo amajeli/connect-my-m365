@@ -13,7 +13,7 @@ const SCOPES = [
   "offline_access",
   "Mail.Read",
   "Mail.ReadWrite",
-  "Calendars.Read",
+  "Calendars.ReadWrite",
   "User.Read",
   "Files.Read",
   "Chat.Read",

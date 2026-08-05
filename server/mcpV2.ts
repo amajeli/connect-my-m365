@@ -626,6 +626,190 @@ function createMcpV2Server(user: User): McpServer {
   );
 
   server.tool(
+    "create_calendar_event",
+    "Create a new calendar event on the specified Microsoft 365 account. Returns the created event's id, subject, and start/end times.",
+    {
+      account_email: z.string().describe("The connected account email to create the event on."),
+      subject: z.string().describe("Title/subject of the event."),
+      start_datetime: z.string().describe("Event start time as ISO 8601 datetime (e.g. '2026-08-10T14:00:00')."),
+      end_datetime: z.string().describe("Event end time as ISO 8601 datetime (e.g. '2026-08-10T15:00:00')."),
+      timezone: z.string().default("UTC").describe("IANA timezone for start/end times (e.g. 'America/New_York'). Defaults to UTC."),
+      body: z.string().optional().describe("Body/description of the event (plain text)."),
+      location: z.string().optional().describe("Location of the event."),
+      attendees: z.array(z.string()).optional().describe("List of attendee email addresses to invite."),
+      is_all_day: z.boolean().default(false).describe("Whether this is an all-day event. If true, start/end should be dates only (YYYY-MM-DD)."),
+      is_online_meeting: z.boolean().default(false).describe("Whether to add a Teams online meeting link."),
+    },
+    async ({ account_email, subject, start_datetime, end_datetime, timezone, body, location, attendees, is_all_day, is_online_meeting }) => {
+      const subError = checkSubscription(user);
+      if (subError) return { content: [{ type: "text" as const, text: subError }] };
+      const fullErr = checkFullAccessRequired(user, "create_calendar_event");
+      if (fullErr) return { content: [{ type: "text" as const, text: fullErr }] };
+
+      const accounts = await storage.getAccountsByUserId(user.id);
+      const account = accounts.find((a) => a.email.toLowerCase() === account_email.toLowerCase());
+      if (!account) {
+        return { content: [{ type: "text" as const, text: `No connected account found with email: ${account_email}` }] };
+      }
+
+      const eventBody: any = {
+        subject,
+        start: { dateTime: start_datetime, timeZone: timezone },
+        end: { dateTime: end_datetime, timeZone: timezone },
+        isAllDay: is_all_day,
+        isOnlineMeeting: is_online_meeting,
+      };
+      if (body) {
+        eventBody.body = { contentType: "text", content: body };
+      }
+      if (location) {
+        eventBody.location = { displayName: location };
+      }
+      if (attendees && attendees.length > 0) {
+        eventBody.attendees = attendees.map((email) => ({
+          emailAddress: { address: email },
+          type: "required",
+        }));
+      }
+
+      try {
+        const accessToken = await getValidAccessToken(account.id);
+        const response = await fetch("https://graph.microsoft.com/v1.0/me/events", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(eventBody),
+        });
+        if (!response.ok) throw new Error(await response.text());
+        const created = await response.json();
+        return {
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({
+              id: created.id,
+              subject: created.subject,
+              start: created.start,
+              end: created.end,
+              webLink: created.webLink,
+              onlineMeetingUrl: created.onlineMeetingUrl || null,
+            }),
+          }],
+        };
+      } catch (err: any) {
+        console.error(`MCP v2: Failed to create calendar event for ${account_email}:`, err.message);
+        return { content: [{ type: "text" as const, text: `Failed to create event: ${err.message}` }] };
+      }
+    }
+  );
+
+  server.tool(
+    "update_calendar_event",
+    "Update an existing calendar event. Only the fields you provide will be changed. Use get_calendar_events or outlook_calendar_search to find the event id first.",
+    {
+      account_email: z.string().describe("The connected account email that owns the event."),
+      event_id: z.string().describe("The event id to update (from get_calendar_events or outlook_calendar_search)."),
+      subject: z.string().optional().describe("New title/subject for the event."),
+      start_datetime: z.string().optional().describe("New start time as ISO 8601 datetime."),
+      end_datetime: z.string().optional().describe("New end time as ISO 8601 datetime."),
+      timezone: z.string().optional().describe("IANA timezone for updated start/end times (e.g. 'America/New_York')."),
+      body: z.string().optional().describe("New body/description (plain text)."),
+      location: z.string().optional().describe("New location."),
+      attendees: z.array(z.string()).optional().describe("Replacement list of attendee email addresses (replaces existing attendees)."),
+      is_online_meeting: z.boolean().optional().describe("Set to true to add a Teams meeting link, false to remove it."),
+    },
+    async ({ account_email, event_id, subject, start_datetime, end_datetime, timezone, body, location, attendees, is_online_meeting }) => {
+      const subError = checkSubscription(user);
+      if (subError) return { content: [{ type: "text" as const, text: subError }] };
+      const fullErr = checkFullAccessRequired(user, "update_calendar_event");
+      if (fullErr) return { content: [{ type: "text" as const, text: fullErr }] };
+
+      const accounts = await storage.getAccountsByUserId(user.id);
+      const account = accounts.find((a) => a.email.toLowerCase() === account_email.toLowerCase());
+      if (!account) {
+        return { content: [{ type: "text" as const, text: `No connected account found with email: ${account_email}` }] };
+      }
+
+      const patch: any = {};
+      if (subject !== undefined) patch.subject = subject;
+      if (start_datetime !== undefined) patch.start = { dateTime: start_datetime, timeZone: timezone || "UTC" };
+      if (end_datetime !== undefined) patch.end = { dateTime: end_datetime, timeZone: timezone || "UTC" };
+      if (body !== undefined) patch.body = { contentType: "text", content: body };
+      if (location !== undefined) patch.location = { displayName: location };
+      if (attendees !== undefined) patch.attendees = attendees.map((email) => ({ emailAddress: { address: email }, type: "required" }));
+      if (is_online_meeting !== undefined) patch.isOnlineMeeting = is_online_meeting;
+
+      if (Object.keys(patch).length === 0) {
+        return { content: [{ type: "text" as const, text: "No fields to update were provided." }] };
+      }
+
+      try {
+        const accessToken = await getValidAccessToken(account.id);
+        const response = await fetch(`https://graph.microsoft.com/v1.0/me/events/${encodeURIComponent(event_id)}`, {
+          method: "PATCH",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(patch),
+        });
+        if (!response.ok) throw new Error(await response.text());
+        const updated = await response.json();
+        return {
+          content: [{
+            type: "text" as const,
+            text: JSON.stringify({
+              id: updated.id,
+              subject: updated.subject,
+              start: updated.start,
+              end: updated.end,
+              webLink: updated.webLink,
+            }),
+          }],
+        };
+      } catch (err: any) {
+        console.error(`MCP v2: Failed to update calendar event for ${account_email}:`, err.message);
+        return { content: [{ type: "text" as const, text: `Failed to update event: ${err.message}` }] };
+      }
+    }
+  );
+
+  server.tool(
+    "delete_calendar_event",
+    "Permanently delete a calendar event. Use get_calendar_events or outlook_calendar_search to find the event id first. This cannot be undone.",
+    {
+      account_email: z.string().describe("The connected account email that owns the event."),
+      event_id: z.string().describe("The event id to delete."),
+    },
+    async ({ account_email, event_id }) => {
+      const subError = checkSubscription(user);
+      if (subError) return { content: [{ type: "text" as const, text: subError }] };
+      const fullErr = checkFullAccessRequired(user, "delete_calendar_event");
+      if (fullErr) return { content: [{ type: "text" as const, text: fullErr }] };
+
+      const accounts = await storage.getAccountsByUserId(user.id);
+      const account = accounts.find((a) => a.email.toLowerCase() === account_email.toLowerCase());
+      if (!account) {
+        return { content: [{ type: "text" as const, text: `No connected account found with email: ${account_email}` }] };
+      }
+
+      try {
+        const accessToken = await getValidAccessToken(account.id);
+        const response = await fetch(`https://graph.microsoft.com/v1.0/me/events/${encodeURIComponent(event_id)}`, {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (!response.ok) throw new Error(await response.text());
+        return { content: [{ type: "text" as const, text: `Event deleted successfully.` }] };
+      } catch (err: any) {
+        console.error(`MCP v2: Failed to delete calendar event for ${account_email}:`, err.message);
+        return { content: [{ type: "text" as const, text: `Failed to delete event: ${err.message}` }] };
+      }
+    }
+  );
+
+  server.tool(
     "list_onedrive_files",
     "List files and folders in OneDrive. If the user has designated allowed folders in their connector settings, browsing is restricted to those folders (and their subfolders). Returns names, types, sizes, and item IDs for use with get_onedrive_file_content.",
     {
