@@ -49,7 +49,7 @@ export default function LandingPage() {
           Your Microsoft 365 in Claude.ai
         </h1>
         <p className="text-lg text-muted-foreground max-w-2xl mx-auto mb-8">
-          Connect your Microsoft email, calendar, OneDrive, and Teams directly to Claude.
+          Connect your personal and work Microsoft email, calendar, OneDrive, and Teams directly to Claude.
           Read, search, and summarize your work data in natural language.
         </p>
         <a href="/api/auth/microsoft" data-testid="button-hero-cta">
