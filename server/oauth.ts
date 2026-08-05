@@ -14,7 +14,7 @@ export function registerOAuthRoutes(app: Express): void {
     res.json({
       resource: `${baseUrl}/mcp`,
       authorization_servers: [baseUrl],
-      scopes_supported: ["outlook:read"],
+      scopes_supported: ["outlook:read", "outlook:readwrite"],
       bearer_methods_supported: ["header"],
     });
   });
@@ -29,7 +29,7 @@ export function registerOAuthRoutes(app: Express): void {
       response_types_supported: ["code"],
       grant_types_supported: ["authorization_code", "refresh_token"],
       token_endpoint_auth_methods_supported: ["client_secret_post"],
-      scopes_supported: ["outlook:read"],
+      scopes_supported: ["outlook:read", "outlook:readwrite"],
       code_challenge_methods_supported: ["S256"],
     });
   });
