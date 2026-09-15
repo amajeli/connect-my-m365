@@ -639,8 +639,10 @@ function createMcpV2Server(user: User): McpServer {
       attendees: z.array(z.string()).optional().describe("List of attendee email addresses to invite."),
       is_all_day: z.boolean().default(false).describe("Whether this is an all-day event. If true, start/end should be dates only (YYYY-MM-DD)."),
       is_online_meeting: z.boolean().default(false).describe("Whether to add a Teams online meeting link."),
+      reminder_on: z.boolean().default(true).describe("Whether the event reminder is enabled. Defaults to true."),
+      reminder_minutes: z.number().int().min(0).max(40320).default(15).describe("Minutes before the event start to show the reminder. Defaults to 15."),
     },
-    async ({ account_email, subject, start_datetime, end_datetime, timezone, body, location, attendees, is_all_day, is_online_meeting }) => {
+    async ({ account_email, subject, start_datetime, end_datetime, timezone, body, location, attendees, is_all_day, is_online_meeting, reminder_on, reminder_minutes }) => {
       const subError = checkSubscription(user);
       if (subError) return { content: [{ type: "text" as const, text: subError }] };
       const fullErr = checkFullAccessRequired(user, "create_calendar_event");
@@ -658,6 +660,8 @@ function createMcpV2Server(user: User): McpServer {
         end: { dateTime: end_datetime, timeZone: timezone },
         isAllDay: is_all_day,
         isOnlineMeeting: is_online_meeting,
+        isReminderOn: reminder_on,
+        reminderMinutesBeforeStart: reminder_minutes,
       };
       if (body) {
         eventBody.body = { contentType: "text", content: body };
@@ -718,8 +722,10 @@ function createMcpV2Server(user: User): McpServer {
       location: z.string().optional().describe("New location."),
       attendees: z.array(z.string()).optional().describe("Replacement list of attendee email addresses (replaces existing attendees)."),
       is_online_meeting: z.boolean().optional().describe("Set to true to add a Teams meeting link, false to remove it."),
+      reminder_on: z.boolean().optional().describe("Enable or disable the event reminder."),
+      reminder_minutes: z.number().int().min(0).max(40320).optional().describe("Minutes before the event start to show the reminder."),
     },
-    async ({ account_email, event_id, subject, start_datetime, end_datetime, timezone, body, location, attendees, is_online_meeting }) => {
+    async ({ account_email, event_id, subject, start_datetime, end_datetime, timezone, body, location, attendees, is_online_meeting, reminder_on, reminder_minutes }) => {
       const subError = checkSubscription(user);
       if (subError) return { content: [{ type: "text" as const, text: subError }] };
       const fullErr = checkFullAccessRequired(user, "update_calendar_event");
@@ -739,6 +745,8 @@ function createMcpV2Server(user: User): McpServer {
       if (location !== undefined) patch.location = { displayName: location };
       if (attendees !== undefined) patch.attendees = attendees.map((email) => ({ emailAddress: { address: email }, type: "required" }));
       if (is_online_meeting !== undefined) patch.isOnlineMeeting = is_online_meeting;
+      if (reminder_on !== undefined) patch.isReminderOn = reminder_on;
+      if (reminder_minutes !== undefined) patch.reminderMinutesBeforeStart = reminder_minutes;
 
       if (Object.keys(patch).length === 0) {
         return { content: [{ type: "text" as const, text: "No fields to update were provided." }] };
