@@ -27,6 +27,11 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
 
+  // Health check used by railway.json
+  app.get("/api/auth/status", (_req, res) => {
+    res.json({ ok: true });
+  });
+
   app.get("/api/auth/me", async (req, res) => {
     if (!req.session.userId) {
       return res.json({ user: null });

@@ -125,7 +125,7 @@ export default function SettingsPage() {
         <div>
           <h1 className="text-xl font-semibold">Connector Settings</h1>
           <p className="text-sm text-muted-foreground">
-            These allow-lists apply to the v2 MCP connector (<code className="text-xs">/mcp/v2</code>) to reduce noise and token usage.
+            These allow-lists apply to the v2 and v3 MCP connectors (<code className="text-xs">/mcp/v2</code>, <code className="text-xs">/mcp/v3</code>) to reduce noise and token usage.
           </p>
         </div>
       </div>

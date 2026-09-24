@@ -24,6 +24,7 @@ export default function BillingPage() {
   const { toast } = useToast();
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [copiedUrlV2, setCopiedUrlV2] = useState(false);
+  const [copiedUrlV3, setCopiedUrlV3] = useState(false);
 
   const { data: productsData } = useQuery<{ data: any[] }>({
     queryKey: ["/api/products-with-prices"],
@@ -116,6 +117,18 @@ export default function BillingPage() {
       setCopiedUrlV2(true);
       setTimeout(() => setCopiedUrlV2(false), 2000);
       toast({ title: "MCP v2 URL copied" });
+    } catch {
+      toast({ title: "Failed to copy", variant: "destructive" });
+    }
+  };
+
+  const handleCopyUrlV3 = async () => {
+    const url = `${window.location.origin}/mcp/v3`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopiedUrlV3(true);
+      setTimeout(() => setCopiedUrlV3(false), 2000);
+      toast({ title: "MCP v3 URL copied" });
     } catch {
       toast({ title: "Failed to copy", variant: "destructive" });
     }
@@ -305,6 +318,27 @@ export default function BillingPage() {
               v2 returns lean email metadata (fetching full bodies only on demand), supports date/sender filters, honors your{" "}
               <Link href="/settings" className="underline">Connector Settings</Link>, and can create drafts (never sends).
               Creating drafts requires re-consenting your Microsoft account with the Mail.ReadWrite permission.
+            </p>
+          </div>
+
+          <div>
+            <label className="text-xs font-medium text-muted-foreground mb-1 block">
+              MCP Server URL (v3 — leanest, recommended)
+            </label>
+            <div className="flex gap-2">
+              <Input
+                readOnly
+                value={`${window.location.origin}/mcp/v3`}
+                className="font-mono text-xs"
+                data-testid="input-mcp-url-v3"
+              />
+              <Button size="icon" variant="ghost" onClick={handleCopyUrlV3} data-testid="button-copy-mcp-url-v3">
+                {copiedUrlV3 ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              v3 keeps everything in v2 and uses fewer tokens: 10 tools instead of 16, compact rows instead of JSON,
+              short ids, and email reads that skip the quoted thread. It also drafts replies (never sends).
             </p>
           </div>
 

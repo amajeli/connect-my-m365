@@ -88,6 +88,23 @@ A separate MCP server (`server/mcpV2.ts`, name `microsoft365-connector-v2`) buil
 ### v2 tools
 `list_accounts`, `get_recent_emails`, `search_emails`, `get_email`, `create_email_draft`, `get_calendar_events`, `outlook_calendar_search`, `list_onedrive_files`, `search_onedrive_files`, `get_onedrive_file_content`, `list_teams_chats`, `get_teams_chat_messages`, `search_teams_messages` + resource `outlook-email://{account}/{messageId}`.
 
+## MCP v3 (leanest connector at `/mcp/v3`, recommended)
+`server/mcpV3.ts` (name `microsoft365-connector-v3`). Built on v2's filters and allow-lists, which now live in `server/mcpShared.ts` (v2 imports them and behaves the same). v1 and v2 are unchanged.
+
+### v3 differences vs v2
+- **10 tools instead of 16**, with short descriptions and `readOnlyHint`/`destructiveHint` annotations. Tool definitions are re-sent on every turn, so this cuts them by about 54%.
+- **Pipe-delimited rows instead of JSON.** The first row names the columns once.
+- **Short handles** (`m1`, `e1`, `f1`, `c1`) replace ~150-char Graph IDs. Handles are held in memory per user (`server/mcpV3Format.ts`); after a restart, tools say the handle expired and to search again.
+- **`mail_read` returns Graph `uniqueBody`**: only the new text of each message, not the quoted thread (`full=true` includes it). It reads up to 5 emails per call. Long tracking URLs become `[link:domain]`.
+- **`mail_find`** handles both the inbox briefing (last 18h with noise hidden, reports how many were hidden) and mailbox-wide KQL search across all folders.
+- **`mail_draft`** can draft replies (`reply_to` handle, `reply_all`), not just new emails. It never sends.
+- **Stateless Streamable HTTP**: a new server per POST and no session map, so restarts and multiple instances are safe. GET/DELETE return 405.
+- **Free tier sees only `mail_find`**, so tools a user can't call don't cost tokens.
+- A 401 includes `WWW-Authenticate` pointing to `/.well-known/oauth-protected-resource/mcp/v3`.
+
+### v3 tools
+`mail_find`, `mail_read`, `mail_draft`, `calendar_find`, `event_save`, `event_delete`, `files_find`, `file_read`, `teams_find`, `teams_read`. Accounts and active settings are sent in the server `instructions` at initialize.
+
 ### Connector Settings UI
 `/settings` page (`client/src/pages/settings.tsx`): Focused-only switch, approved-sender badge editor, and OneDrive folder allow-list with a live folder browser. Backed by `GET/PUT /api/settings` and `GET /api/onedrive/browse`.
 
@@ -97,6 +114,9 @@ A separate MCP server (`server/mcpV2.ts`, name `microsoft365-connector-v2`) buil
 - `server/oauth.ts` - OAuth 2.0 provider (discovery, DCR, authorize, token endpoints)
 - `server/mcp.ts` - MCP v1 server with per-user scoping and OAuth/API key auth (exports shared auth/gating helpers)
 - `server/mcpV2.ts` - MCP v2 server (token-efficient, allow-lists, drafts) at `/mcp/v2`
+- `server/mcpV3.ts` - MCP v3 server (leanest, stateless) at `/mcp/v3`; `mcpV3Format.ts` (rows, handles), `graphV3.ts` (Graph calls)
+- `server/mcpShared.ts` - filters and allow-list checks shared by v2 and v3
+- `server/__tests__/` - `npm test` (node:test via tsx; v3 end-to-end with stubbed storage and Graph)
 - `server/microsoft.ts` - Microsoft Graph API integration (OAuth, token management, API calls)
 - `server/storage.ts` - Database storage layer + Stripe schema queries + OAuth storage
 - `server/stripeClient.ts` - Stripe client via Replit connector credentials
@@ -176,6 +196,10 @@ A separate MCP server (`server/mcpV2.ts`, name `microsoft365-connector-v2`) buil
 - `POST /api/stripe/webhook` - Stripe webhook handler (raw body, before express.json())
 
 ### OAuth (for Claude.ai MCP connector)
+Security rules (codes are issued without a consent screen, so these are required):
+- `redirect_uri` must be https on `claude.ai` / `claude.com`, loopback http (`localhost`, `127.0.0.1`), or a host listed in `OAUTH_ALLOWED_REDIRECT_HOSTS`. This is checked at registration and at every authorize, including for older or self-healed clients.
+- PKCE S256 is mandatory.
+
 - `GET /.well-known/oauth-authorization-server` - OAuth discovery metadata
 - `POST /oauth/register` - Dynamic Client Registration (RFC 7591)
 - `GET /oauth/authorize` - Authorization endpoint (redirects to Microsoft login if needed)
@@ -192,6 +216,8 @@ A separate MCP server (`server/mcpV2.ts`, name `microsoft365-connector-v2`) buil
 - `MICROSOFT_CLIENT_SECRET` - Azure AD app client secret
 - `DATABASE_URL` - PostgreSQL connection string
 - `SESSION_SECRET` - Express session secret
+- `OAUTH_ALLOWED_REDIRECT_HOSTS` - optional, comma-separated extra hosts allowed as OAuth redirect targets
+- `EMAIL_SENDER_BLOCKLIST` - optional, comma-separated override for the automated-sender noise filter (v2/v3)
 - Stripe credentials managed via Replit connector (stripe-replit-sync)
 
 ## Setup Requirements

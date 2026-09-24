@@ -2,6 +2,41 @@ import crypto from "crypto";
 import type { Express, Request, Response } from "express";
 import { storage } from "./storage";
 
+// Hosts allowed to receive authorization codes. Codes are issued without a
+// consent screen, so an open redirect_uri would let anyone who can get a
+// signed-in user to click a link capture that user's code.
+const DEFAULT_REDIRECT_HOSTS = ["claude.ai", "claude.com"];
+
+function getAllowedRedirectHosts(): string[] {
+  const extra = (process.env.OAUTH_ALLOWED_REDIRECT_HOSTS || "")
+    .split(",")
+    .map((h) => h.trim().toLowerCase())
+    .filter(Boolean);
+  return [...DEFAULT_REDIRECT_HOSTS, ...extra];
+}
+
+export function isAllowedRedirectUri(uri: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(uri);
+  } catch {
+    return false;
+  }
+  const host = url.hostname.toLowerCase();
+  // Loopback redirects (RFC 8252) are only reachable on the user's own machine,
+  // so they're safe for local tools like the MCP Inspector.
+  if (url.protocol === "http:" && (host === "localhost" || host === "127.0.0.1" || host === "[::1]")) {
+    return true;
+  }
+  return url.protocol === "https:" && getAllowedRedirectHosts().includes(host);
+}
+
+function secretsEqual(a: string, b: string): boolean {
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  return ab.length === bb.length && crypto.timingSafeEqual(ab, bb);
+}
+
 function getBaseUrl(req: Request): string {
   const protocol = req.protocol;
   const host = req.get("host");
@@ -9,6 +44,18 @@ function getBaseUrl(req: Request): string {
 }
 
 export function registerOAuthRoutes(app: Express): void {
+  // Path-specific metadata (RFC 9728), e.g. /.well-known/oauth-protected-resource/mcp/v3
+  app.get("/.well-known/oauth-protected-resource/*resourcePath", (req: Request, res: Response) => {
+    const baseUrl = getBaseUrl(req);
+    const resourcePath = req.path.slice("/.well-known/oauth-protected-resource".length);
+    res.json({
+      resource: `${baseUrl}${resourcePath}`,
+      authorization_servers: [baseUrl],
+      scopes_supported: ["outlook:read", "outlook:readwrite"],
+      bearer_methods_supported: ["header"],
+    });
+  });
+
   app.get("/.well-known/oauth-protected-resource", (req: Request, res: Response) => {
     const baseUrl = getBaseUrl(req);
     res.json({
@@ -42,6 +89,14 @@ export function registerOAuthRoutes(app: Express): void {
         return res.status(400).json({
           error: "invalid_client_metadata",
           error_description: "redirect_uris is required and must be a non-empty array",
+        });
+      }
+
+      const rejected = redirect_uris.filter((u: unknown) => typeof u !== "string" || !isAllowedRedirectUri(u));
+      if (rejected.length > 0) {
+        return res.status(400).json({
+          error: "invalid_redirect_uri",
+          error_description: "redirect_uris must point to an approved MCP client host",
         });
       }
 
@@ -93,6 +148,22 @@ export function registerOAuthRoutes(app: Express): void {
         return res.status(400).json({
           error: "invalid_request",
           error_description: "client_id and redirect_uri are required",
+        });
+      }
+
+      // Checked for every client, including ones registered before this rule existed.
+      if (!isAllowedRedirectUri(redirect_uri)) {
+        return res.status(400).json({
+          error: "invalid_request",
+          error_description: "redirect_uri is not an approved MCP client host",
+        });
+      }
+
+      // PKCE is mandatory: it binds the code to the client that started the flow.
+      if (!code_challenge || code_challenge_method !== "S256") {
+        return res.status(400).json({
+          error: "invalid_request",
+          error_description: "PKCE with code_challenge_method=S256 is required",
         });
       }
 
@@ -180,7 +251,7 @@ export function registerOAuthRoutes(app: Express): void {
         }
         if (client.clientSecret === "") {
           await storage.updateOAuthClientSecret(client_id, client_secret);
-        } else if (client.clientSecret !== client_secret) {
+        } else if (!secretsEqual(client.clientSecret, client_secret)) {
           return res.status(401).json({
             error: "invalid_client",
             error_description: "Invalid client credentials",
@@ -223,25 +294,29 @@ export function registerOAuthRoutes(app: Express): void {
           });
         }
 
-        if (authCode.codeChallenge) {
-          if (!code_verifier) {
-            return res.status(400).json({
-              error: "invalid_grant",
-              error_description: "code_verifier is required for PKCE",
-            });
-          }
+        if (!authCode.codeChallenge) {
+          return res.status(400).json({
+            error: "invalid_grant",
+            error_description: "Authorization code was issued without PKCE; restart the authorization flow",
+          });
+        }
+        if (!code_verifier) {
+          return res.status(400).json({
+            error: "invalid_grant",
+            error_description: "code_verifier is required for PKCE",
+          });
+        }
 
-          const expectedChallenge = crypto
-            .createHash("sha256")
-            .update(code_verifier)
-            .digest("base64url");
+        const expectedChallenge = crypto
+          .createHash("sha256")
+          .update(code_verifier)
+          .digest("base64url");
 
-          if (expectedChallenge !== authCode.codeChallenge) {
-            return res.status(400).json({
-              error: "invalid_grant",
-              error_description: "code_verifier validation failed",
-            });
-          }
+        if (expectedChallenge !== authCode.codeChallenge) {
+          return res.status(400).json({
+            error: "invalid_grant",
+            error_description: "code_verifier validation failed",
+          });
         }
 
         await storage.markOAuthCodeUsed(code);
@@ -286,7 +361,7 @@ export function registerOAuthRoutes(app: Express): void {
         }
         if (client.clientSecret === "") {
           await storage.updateOAuthClientSecret(client_id, client_secret);
-        } else if (client.clientSecret !== client_secret) {
+        } else if (!secretsEqual(client.clientSecret, client_secret)) {
           return res.status(401).json({
             error: "invalid_client",
             error_description: "Invalid client credentials",

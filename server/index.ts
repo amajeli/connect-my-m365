@@ -5,6 +5,7 @@ import { registerRoutes } from "./routes";
 import { registerOAuthRoutes } from "./oauth";
 import { registerMcpRoutes } from "./mcp";
 import { registerMcpV2Routes } from "./mcpV2";
+import { registerMcpV3Routes } from "./mcpV3";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { runMigrations } from 'stripe-replit-sync';
@@ -174,6 +175,7 @@ export function log(message: string, source = "express") {
   registerOAuthRoutes(app);
   registerMcpRoutes(app);
   registerMcpV2Routes(app);
+  registerMcpV3Routes(app);
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
