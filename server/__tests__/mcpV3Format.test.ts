@@ -1,9 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  toHandle,
-  fromHandle,
-  resetHandlesForTest,
   row,
   shortDateTime,
   eventWhen,
@@ -11,19 +8,20 @@ import {
   humanSize,
   compactText,
   kqlTerm,
+  findConflicts,
+  type CalendarItem,
 } from "../mcpV3Format";
+import { toHandles, fromHandle, memoryBackend, setHandleBackendForTest } from "../handleStore";
 
-test("handles are short, stable per item, and scoped by kind and user", () => {
-  resetHandlesForTest();
-  const target = { accountId: "a1", accountEmail: "a@x.com", ref: "AAMkAG-long-graph-id" };
-  const h = toHandle("u1", "m", target);
-  assert.equal(h, "m1");
-  assert.equal(toHandle("u1", "m", target), "m1");
-  assert.equal(toHandle("u1", "m", { ...target, ref: "other" }), "m2");
-  assert.equal(toHandle("u1", "m", { ...target, accountId: "a2" }), "m3");
-  assert.deepEqual(fromHandle("u1", "m", "m1"), target);
-  assert.equal(fromHandle("u1", "e", "m1"), null);
-  assert.equal(fromHandle("u2", "m", "m1"), null);
+test("short ids are stable per item and scoped by kind and user", async () => {
+  setHandleBackendForTest(memoryBackend());
+  const t = { accountId: "a1", accountEmail: "a@x.com", ref: "AAMkAG-long-graph-id" };
+  assert.deepEqual(await toHandles("u1", "m", [t, { ...t, ref: "other" }, t]), ["m1", "m2", "m1"]);
+  assert.deepEqual(await toHandles("u1", "m", [{ ...t, accountId: "a2" }]), ["m3"]);
+  assert.deepEqual(await toHandles("u1", "e", [t]), ["e1"]);
+  assert.deepEqual(await fromHandle("u1", "m", "m1"), t);
+  assert.equal(await fromHandle("u1", "e", "m1"), null);
+  assert.equal(await fromHandle("u2", "m", "m1"), null);
 });
 
 test("row flattens separators and drops trailing empty cells", () => {
@@ -61,4 +59,45 @@ test("compactText shortens tracking links, whitespace, and length", () => {
 
 test("kqlTerm strips quote breakouts", () => {
   assert.equal(kqlTerm('budget" OR "x'), "budget  OR  x");
+});
+
+const ev = (key: string, account: string, start: string, end: string, extra: Partial<CalendarItem> = {}): CalendarItem => ({
+  key, subject: `Meeting ${key}`, account, start, end, isAllDay: false, showAs: "busy", ...extra,
+});
+
+test("findConflicts finds overlaps within and across calendars", () => {
+  const { conflicts, duplicates } = findConflicts([
+    ev("1", "work@a.com", "2026-09-24T15:00:00", "2026-09-24T16:00:00"),
+    ev("2", "home@b.com", "2026-09-24T15:30:00", "2026-09-24T16:30:00"),
+    ev("3", "work@a.com", "2026-09-24T16:00:00", "2026-09-24T17:00:00"),
+  ]);
+  assert.equal(duplicates, 0);
+  assert.deepEqual(
+    conflicts.map((c) => [c.a.key, c.b.key, c.crossCalendar, c.overlapStart]),
+    [
+      ["1", "2", true, "2026-09-24T15:30:00.000Z"],
+      ["2", "3", true, "2026-09-24T16:00:00.000Z"],
+    ],
+  );
+});
+
+test("findConflicts ignores free, cancelled, declined and the same meeting on two calendars", () => {
+  const { conflicts, duplicates } = findConflicts([
+    ev("1", "work@a.com", "2026-09-24T15:00:00", "2026-09-24T16:00:00", { subject: "Board call" }),
+    ev("2", "home@b.com", "2026-09-24T15:00:00", "2026-09-24T16:00:00", { subject: "FW: Board call" }),
+    ev("3", "work@a.com", "2026-09-24T15:00:00", "2026-09-24T16:00:00", { showAs: "free" }),
+    ev("4", "work@a.com", "2026-09-24T15:00:00", "2026-09-24T16:00:00", { isCancelled: true }),
+    ev("5", "home@b.com", "2026-09-24T15:00:00", "2026-09-24T16:00:00", { declined: true }),
+  ]);
+  assert.equal(conflicts.length, 0);
+  assert.equal(duplicates, 1);
+});
+
+test("findConflicts treats an out-of-office day as blocking", () => {
+  const { conflicts } = findConflicts([
+    ev("1", "work@a.com", "2026-09-24T00:00:00", "2026-09-25T00:00:00", { isAllDay: true, showAs: "oof" }),
+    ev("2", "work@a.com", "2026-09-24T15:00:00", "2026-09-24T16:00:00"),
+  ]);
+  assert.equal(conflicts.length, 1);
+  assert.equal(conflicts[0].crossCalendar, false);
 });

@@ -89,21 +89,24 @@ A separate MCP server (`server/mcpV2.ts`, name `microsoft365-connector-v2`) buil
 `list_accounts`, `get_recent_emails`, `search_emails`, `get_email`, `create_email_draft`, `get_calendar_events`, `outlook_calendar_search`, `list_onedrive_files`, `search_onedrive_files`, `get_onedrive_file_content`, `list_teams_chats`, `get_teams_chat_messages`, `search_teams_messages` + resource `outlook-email://{account}/{messageId}`.
 
 ## MCP v3 (leanest connector at `/mcp/v3`, recommended)
-`server/mcpV3.ts` (name `microsoft365-connector-v3`). Built on v2's filters and allow-lists, which now live in `server/mcpShared.ts` (v2 imports them and behaves the same). v1 and v2 are unchanged.
+`server/mcpV3.ts` (name `microsoft365-connector-v3`). Built on v2's filters and allow-lists, which now live in `server/mcpShared.ts` (v2 imports them and behaves the same). v1 and v2 are unchanged. v3 is the only version that works reliably on serverless hosts (Netlify); see `NETLIFY.md`.
 
 ### v3 differences vs v2
-- **10 tools instead of 16**, with short descriptions and `readOnlyHint`/`destructiveHint` annotations. Tool definitions are re-sent on every turn, so this cuts them by about 54%.
+- **Fewer, shorter tools** with `readOnlyHint`/`destructiveHint` annotations. Tool definitions are re-sent on every turn.
 - **Pipe-delimited rows instead of JSON.** The first row names the columns once.
-- **Short handles** (`m1`, `e1`, `f1`, `c1`) replace ~150-char Graph IDs. Handles are held in memory per user (`server/mcpV3Format.ts`); after a restart, tools say the handle expired and to search again.
-- **`mail_read` returns Graph `uniqueBody`**: only the new text of each message, not the quoted thread (`full=true` includes it). It reads up to 5 emails per call. Long tracking URLs become `[link:domain]`.
-- **`mail_find`** handles both the inbox briefing (last 18h with noise hidden, reports how many were hidden) and mailbox-wide KQL search across all folders.
-- **`mail_draft`** can draft replies (`reply_to` handle, `reply_all`), not just new emails. It never sends.
-- **Stateless Streamable HTTP**: a new server per POST and no session map, so restarts and multiple instances are safe. GET/DELETE return 405.
-- **Free tier sees only `mail_find`**, so tools a user can't call don't cost tokens.
+- **Short ids** (`m1`, `e1`, `f1`, `c1`) replace ~150-char Graph IDs. They're stored in the `mcp_handles` table (`server/handleStore.ts`), so they survive cold starts and work across parallel instances. Allocation is serialized per user with a Postgres advisory lock. Old ids are pruned after 30 days, but numbers are never reused. Without `DATABASE_URL` an in-memory store is used (tests).
+- **Multi-account first**: every read tool queries all connected accounts in parallel and labels results by account.
+- **`mail_read` returns Graph `uniqueBody`**: only the new text of each message, not the quoted thread (`full=true` includes it). Long tracking URLs become `[link:domain]`.
+- **`mail_find`** handles both the inbox briefing (last 18h, noise hidden, reports how many were hidden) and mailbox-wide KQL search.
+- **`mail_draft` requires `account`**, and the tool description and server instructions tell Claude to ask the user which account. It never sends. A reply can be drafted from a different account than the one that received it; this creates a new draft to the sender with the original quoted.
+- **`calendar_find`** flags double bookings (`C`). **`calendar_conflicts`** lists every overlap across all calendars. Free, cancelled and declined events don't count, and the same meeting on two calendars (same subject and times) is treated as a duplicate, not a conflict.
+- **`teams_send`** posts to an existing chat (c-id) or starts or reuses a chat with people (`people` emails). It sends immediately, so the description tells Claude to confirm the text first. Requires the `Chat.ReadWrite` scope; existing accounts must reconnect once.
+- **Stateless Streamable HTTP**: a new server per POST and no session map. GET/DELETE return 405.
+- **Free tier sees only `mail_find`**.
 - A 401 includes `WWW-Authenticate` pointing to `/.well-known/oauth-protected-resource/mcp/v3`.
 
 ### v3 tools
-`mail_find`, `mail_read`, `mail_draft`, `calendar_find`, `event_save`, `event_delete`, `files_find`, `file_read`, `teams_find`, `teams_read`. Accounts and active settings are sent in the server `instructions` at initialize.
+`mail_find`, `mail_read`, `mail_draft`, `calendar_find`, `calendar_conflicts`, `event_save`, `event_delete`, `files_find`, `file_read`, `teams_find`, `teams_read`, `teams_send`. Accounts, active settings and the draft/send rules go in the server `instructions` at initialize.
 
 ### Connector Settings UI
 `/settings` page (`client/src/pages/settings.tsx`): Focused-only switch, approved-sender badge editor, and OneDrive folder allow-list with a live folder browser. Backed by `GET/PUT /api/settings` and `GET /api/onedrive/browse`.
@@ -116,6 +119,9 @@ A separate MCP server (`server/mcpV2.ts`, name `microsoft365-connector-v2`) buil
 - `server/mcpV2.ts` - MCP v2 server (token-efficient, allow-lists, drafts) at `/mcp/v2`
 - `server/mcpV3.ts` - MCP v3 server (leanest, stateless) at `/mcp/v3`; `mcpV3Format.ts` (rows, handles), `graphV3.ts` (Graph calls)
 - `server/mcpShared.ts` - filters and allow-list checks shared by v2 and v3
+- `server/handleStore.ts` - database-backed short ids for v3
+- `server/app.ts` - Express app factory used by `server/index.ts` (long-running server) and `netlify/functions/api.ts` (Netlify Function)
+- `netlify.toml`, `script/build-netlify.ts`, `NETLIFY.md` - Netlify build and deploy guide
 - `server/__tests__/` - `npm test` (node:test via tsx; v3 end-to-end with stubbed storage and Graph)
 - `server/microsoft.ts` - Microsoft Graph API integration (OAuth, token management, API calls)
 - `server/storage.ts` - Database storage layer + Stripe schema queries + OAuth storage
@@ -163,6 +169,11 @@ A separate MCP server (`server/mcpV2.ts`, name `microsoft365-connector-v2`) buil
 ### oauth_tokens table (Access/refresh tokens)
 - id (varchar, PK, UUID)
 - accessToken (text, unique), refreshToken (text, unique), clientId, userId (FK), scope, expiresAt, createdAt
+
+### mcp_handles table (v3 short ids)
+- PK (userId, handle); unique (userId, refKey)
+- handle (e.g. "m12"), kind (m/e/f/c), num, refKey (hash of account + Graph id), accountId, accountEmail, ref (Graph id), createdAt
+- Created by `npm run db:migrate` (`script/migrate.ts`, idempotent)
 
 ### connector_settings table (per-user v2 allow-lists)
 - id (varchar, PK, UUID)
@@ -224,7 +235,7 @@ Security rules (codes are issued without a consent screen, so these are required
 Azure AD app registration must have:
 - Supported account types: "Accounts in any organizational directory and personal Microsoft accounts"
 - Redirect URI: `https://<domain>/api/auth/callback`
-- API permissions: Mail.Read, Mail.ReadWrite (for v2 drafts), Calendars.Read, User.Read, Files.Read, Chat.Read, offline_access
+- API permissions: Mail.Read, Mail.ReadWrite (for drafts), Calendars.ReadWrite, User.Read, Files.Read, Chat.ReadWrite (for v3 teams_send), offline_access
 - NOTE: `Mail.ReadWrite` was added to the requested scopes — existing connected accounts must re-consent (reconnect) before `create_email_draft` will work.
 
 ## Important Notes

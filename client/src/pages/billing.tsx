@@ -337,8 +337,9 @@ export default function BillingPage() {
               </Button>
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              v3 keeps everything in v2 and uses fewer tokens: 10 tools instead of 16, compact rows instead of JSON,
-              short ids, and email reads that skip the quoted thread. It also drafts replies (never sends).
+              v3 keeps everything in v2 and uses fewer tokens: compact rows instead of JSON, short ids, and email
+              reads that skip the quoted thread. It also finds double bookings across all your calendars, drafts
+              replies from any account (never sends), and can send Teams chat messages.
             </p>
           </div>
 

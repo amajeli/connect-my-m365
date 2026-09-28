@@ -16,7 +16,7 @@ const SCOPES = [
   "Calendars.ReadWrite",
   "User.Read",
   "Files.Read",
-  "Chat.Read",
+  "Chat.ReadWrite",
 ];
 
 function getRedirectUri(requestHost?: string): string {

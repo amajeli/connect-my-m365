@@ -1,63 +1,5 @@
 // Pure helpers for the v3 MCP server. v3 returns pipe-delimited rows instead of
-// JSON (no repeated keys) and swaps long Graph IDs for short per-user handles
-// like "m3" — a Graph message ID alone is ~150 characters of hard-to-tokenize text.
-
-export type HandleKind = "m" | "e" | "f" | "c";
-
-export interface HandleTarget {
-  accountId: string;
-  accountEmail: string;
-  ref: string;
-}
-
-const MAX_HANDLES_PER_USER = 2000;
-
-interface UserHandles {
-  next: Record<HandleKind, number>;
-  byHandle: Map<string, HandleTarget>;
-  byRef: Map<string, string>;
-}
-
-// In memory on purpose: handles are a token-saving convenience, not durable
-// state. After a restart, tools say the handle expired and to search again.
-const handleStore = new Map<string, UserHandles>();
-
-function userHandles(userId: string): UserHandles {
-  let h = handleStore.get(userId);
-  if (!h) {
-    h = { next: { m: 1, e: 1, f: 1, c: 1 }, byHandle: new Map(), byRef: new Map() };
-    handleStore.set(userId, h);
-  }
-  return h;
-}
-
-export function toHandle(userId: string, kind: HandleKind, target: HandleTarget): string {
-  const h = userHandles(userId);
-  const key = `${kind}:${target.accountId}:${target.ref}`;
-  const existing = h.byRef.get(key);
-  if (existing && h.byHandle.has(existing)) return existing;
-
-  const handle = `${kind}${h.next[kind]++}`;
-  h.byHandle.set(handle, target);
-  h.byRef.set(key, handle);
-
-  if (h.byHandle.size > MAX_HANDLES_PER_USER) {
-    const oldest = h.byHandle.keys().next().value as string;
-    const t = h.byHandle.get(oldest)!;
-    h.byHandle.delete(oldest);
-    h.byRef.delete(`${oldest[0]}:${t.accountId}:${t.ref}`);
-  }
-  return handle;
-}
-
-export function fromHandle(userId: string, kind: HandleKind, handle: string): HandleTarget | null {
-  if (!new RegExp(`^${kind}\\d+$`).test(handle)) return null;
-  return userHandles(userId).byHandle.get(handle) ?? null;
-}
-
-export function resetHandlesForTest(): void {
-  handleStore.clear();
-}
+// JSON (no repeated keys); short ids like "m3" come from handleStore.ts.
 
 /** Makes a value safe for a pipe-delimited row. */
 export function cell(value: unknown): string {
@@ -145,4 +87,62 @@ export function compactText(text: string | null | undefined, maxChars: number): 
 /** Strips characters that would break out of a quoted KQL $search string. */
 export function kqlTerm(value: string): string {
   return value.replace(/["\\]/g, " ").trim();
+}
+
+export interface CalendarItem {
+  key: string;
+  subject: string;
+  account: string;
+  start: string;
+  end: string;
+  isAllDay: boolean;
+  showAs?: string;
+  isCancelled?: boolean;
+  declined?: boolean;
+}
+
+export interface Conflict {
+  a: CalendarItem;
+  b: CalendarItem;
+  overlapStart: string;
+  overlapEnd: string;
+  crossCalendar: boolean;
+}
+
+/**
+ * Finds double bookings. Free, cancelled and declined events don't block time.
+ * The same meeting on two calendars (same subject and times on different
+ * accounts, e.g. an invite sent to both work and personal) is a duplicate,
+ * not a conflict.
+ */
+export function findConflicts(items: CalendarItem[]): { conflicts: Conflict[]; duplicates: number } {
+  const busy = items
+    .filter((e) => !e.isCancelled && !e.declined && e.showAs !== "free")
+    .map((e) => ({ e, s: parseUtc(e.start).getTime(), t: parseUtc(e.end).getTime() }))
+    .filter((x) => x.t > x.s)
+    .sort((x, y) => x.s - y.s);
+
+  const norm = (s: string) => s.trim().toLowerCase().replace(/^(re|fw|fwd):\s*/i, "");
+  const conflicts: Conflict[] = [];
+  let duplicates = 0;
+  for (let i = 0; i < busy.length; i++) {
+    for (let j = i + 1; j < busy.length && busy[j].s < busy[i].t; j++) {
+      const x = busy[i];
+      const y = busy[j];
+      const sameMeeting =
+        x.e.account !== y.e.account && x.s === y.s && x.t === y.t && norm(x.e.subject) === norm(y.e.subject);
+      if (sameMeeting) {
+        duplicates++;
+        continue;
+      }
+      conflicts.push({
+        a: x.e,
+        b: y.e,
+        overlapStart: new Date(Math.max(x.s, y.s)).toISOString(),
+        overlapEnd: new Date(Math.min(x.t, y.t)).toISOString(),
+        crossCalendar: x.e.account !== y.e.account,
+      });
+    }
+  }
+  return { conflicts, duplicates };
 }

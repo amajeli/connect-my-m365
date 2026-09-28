@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, timestamp, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, timestamp, boolean, integer, primaryKey, uniqueIndex } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -190,3 +190,24 @@ export const connectorSettingsUpdateSchema = z.object({
   allowedOnedriveFolders: z.array(z.string().trim().min(1)).max(200).optional(),
 });
 export type ConnectorSettingsUpdate = z.infer<typeof connectorSettingsUpdateSchema>;
+
+// Short ids (m1, e1, f1, c1) the v3 MCP server hands to Claude in place of long
+// Graph ids. Stored so they survive serverless cold starts and parallel instances.
+export const mcpHandles = pgTable(
+  "mcp_handles",
+  {
+    userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+    handle: text("handle").notNull(),
+    kind: text("kind").notNull(),
+    num: integer("num").notNull(),
+    refKey: text("ref_key").notNull(),
+    accountId: varchar("account_id").notNull(),
+    accountEmail: text("account_email").notNull(),
+    ref: text("ref").notNull(),
+    createdAt: timestamp("created_at").notNull().default(sql`now()`),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.handle] }),
+    uniqueIndex("mcp_handles_ref_idx").on(t.userId, t.refKey),
+  ],
+);

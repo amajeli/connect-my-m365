@@ -1,0 +1,48 @@
+# Netlify: the React client is served from the CDN and the Express API runs as
+# one function. Required environment variables are listed in NETLIFY.md.
+
+[build]
+  command = "npm run build:netlify"
+  publish = "dist/public"
+
+[functions]
+  # build:netlify pre-bundles the function (resolving the @shared/* path alias),
+  # so Netlify only needs to package the single file.
+  directory = "netlify/functions-dist"
+  node_bundler = "esbuild"
+
+[[redirects]]
+  from = "/api/*"
+  to = "/.netlify/functions/api/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/oauth/*"
+  to = "/.netlify/functions/api/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/mcp"
+  to = "/.netlify/functions/api"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/mcp/*"
+  to = "/.netlify/functions/api/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/.well-known/*"
+  to = "/.netlify/functions/api/:splat"
+  status = 200
+  force = true
+
+# Single-page app fallback for client routes like /inbox and /settings.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

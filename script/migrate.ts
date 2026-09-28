@@ -72,5 +72,32 @@ await pool.query(`
   )
 `);
 
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS connector_settings (
+    id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id VARCHAR NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+    focused_only BOOLEAN NOT NULL DEFAULT false,
+    approved_senders TEXT[] NOT NULL DEFAULT '{}'::text[],
+    allowed_onedrive_folders TEXT[] NOT NULL DEFAULT '{}'::text[],
+    updated_at TIMESTAMP NOT NULL DEFAULT now()
+  )
+`);
+
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS mcp_handles (
+    user_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    handle TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    num INTEGER NOT NULL,
+    ref_key TEXT NOT NULL,
+    account_id VARCHAR NOT NULL,
+    account_email TEXT NOT NULL,
+    ref TEXT NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT now(),
+    PRIMARY KEY (user_id, handle)
+  )
+`);
+await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS mcp_handles_ref_idx ON mcp_handles (user_id, ref_key)`);
+
 console.log('All tables created successfully');
 await pool.end();

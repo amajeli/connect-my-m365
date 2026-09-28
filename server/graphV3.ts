@@ -79,7 +79,7 @@ export async function getCalendarView(accessToken: string, start: string, end: s
   const params = new URLSearchParams({
     startDateTime: start,
     endDateTime: end,
-    $select: "id,subject,start,end,location,organizer,isAllDay,showAs,isCancelled,isOnlineMeeting,onlineMeeting,onlineMeetingUrl",
+    $select: "id,subject,start,end,location,organizer,isAllDay,showAs,isCancelled,responseStatus,isOnlineMeeting,onlineMeeting,onlineMeetingUrl",
     $orderby: "start/dateTime",
     $top: String(top),
   });
@@ -102,4 +102,31 @@ export async function updateEvent(accessToken: string, id: string, patch: any): 
 
 export async function deleteEvent(accessToken: string, id: string): Promise<void> {
   await graph(accessToken, `/me/events/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+/** Posts a plain-text message to a Teams chat. Requires Chat.ReadWrite (or ChatMessage.Send). */
+export async function sendChatMessage(accessToken: string, chatId: string, text: string): Promise<any> {
+  return graph(accessToken, `/me/chats/${encodeURIComponent(chatId)}/messages`, {
+    method: "POST",
+    body: JSON.stringify({ body: { contentType: "text", content: text } }),
+  });
+}
+
+/**
+ * Opens a chat with people in the same organization: one-on-one for one
+ * person (Graph returns the existing chat if there is one), a group chat otherwise.
+ */
+export async function createChat(accessToken: string, emails: string[], topic?: string): Promise<any> {
+  const me = await graph(accessToken, "/me?$select=id");
+  const member = (userRef: string) => ({
+    "@odata.type": "#microsoft.graph.aadUserConversationMember",
+    roles: ["owner"],
+    "user@odata.bind": `${GRAPH}/users('${encodeURIComponent(userRef)}')`,
+  });
+  const chat: any = {
+    chatType: emails.length === 1 ? "oneOnOne" : "group",
+    members: [member(me.id), ...emails.map(member)],
+  };
+  if (topic && emails.length > 1) chat.topic = topic;
+  return graph(accessToken, "/chats", { method: "POST", body: JSON.stringify(chat) });
 }
