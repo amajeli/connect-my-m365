@@ -4,5 +4,6 @@ dist
 server/public
 vite.config.ts.*
 *.tar.gz
-.envnetlify/functions-dist
+.env
+netlify/functions-dist
 .netlify
